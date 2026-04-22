@@ -1326,6 +1326,13 @@ function doBulkApprove(){
   contacts=contacts.map(c=>(!c.emailSent&&(!tp||c.templateUsed===tp)&&(!ti||String(c.tier)===ti))?{...c,approved:true}:c);
   save();updateBulkCount();updateGlobals();toast(contacts.filter(c=>c.approved&&!c.emailSent).length+' approved','green');
 }
+function goReviewGroup(tier,tpl){
+  setQueueTab('individual');
+  setTimeout(()=>{
+    const c=contacts.find(x=>!x.emailSent&&x.tier===tier&&(x.templateUsed||'B')===tpl);
+    if(c){selectedQueueId=c.id;renderQueueIndividual();}
+  },100);
+}
 
 function renderDashboard(){
   const sent=contacts.filter(c=>c.emailSent);
