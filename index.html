@@ -1,0 +1,1477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>CAN USA — Outbound Platform</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/msal.js/2.38.3/msal-browser.min.js"></script>
+<style>
+:root{
+  --bg:#1A1E30;--sidebar:#151827;--surface:#202436;--surface2:#262B44;
+  --border:rgba(255,255,255,0.08);--border2:rgba(255,255,255,0.14);
+  --text:#DCE3F2;--muted:#8695B2;--dim:#4D5F7A;
+  --amber:#D98B28;--amber-bg:rgba(217,139,40,0.13);--amber-border:rgba(217,139,40,0.3);
+  --green:#2EB86A;--green-bg:rgba(46,184,106,0.1);
+  --blue:#4D8EC8;--blue-bg:rgba(77,142,200,0.1);
+  --teal:#22A898;--teal-bg:rgba(34,168,152,0.1);
+  --red:#C05050;--red-bg:rgba(192,80,80,0.1);
+  --violet:#7B68C8;--violet-bg:rgba(123,104,200,0.1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.app{display:flex;flex:1;overflow:hidden}
+/* NAV */
+.topnav{padding:0 16px;background:var(--sidebar);border-bottom:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;gap:3px;height:44px}
+.nav-btn{padding:5px 11px;border-radius:6px;border:1px solid transparent;cursor:pointer;font-size:12px;font-weight:500;transition:all .12s;background:transparent;color:var(--muted);font-family:inherit;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.nav-btn:hover{background:rgba(255,255,255,0.05);color:var(--text)}
+.nav-btn.active{border-color:var(--amber-border);color:var(--amber);background:var(--amber-bg)}
+.nav-badge{background:var(--amber);color:#0B0F1A;border-radius:10px;font-size:10px;font-weight:700;padding:1px 5px;line-height:14px}
+/* LAYOUT */
+.main{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.view{display:none;flex:1;overflow:hidden;flex-direction:column}
+.view.active{display:flex}
+.topbar{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:var(--sidebar);flex-shrink:0;flex-wrap:wrap}
+.topbar-title{font-weight:600;font-size:14px;color:var(--text)}
+/* BUTTONS */
+.btn{padding:6px 12px;border-radius:6px;border:1px solid var(--border2);cursor:pointer;font-size:12px;font-weight:500;transition:all .12s;display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,0.05);color:var(--muted);font-family:inherit;white-space:nowrap}
+.btn:hover{background:rgba(255,255,255,0.09);color:var(--text)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-amber{background:var(--amber-bg);color:var(--amber);border-color:var(--amber-border)}
+.btn-amber:hover{background:rgba(217,139,40,0.22)}
+.btn-solid{background:var(--amber);color:#0B0F1A;border-color:var(--amber);font-weight:600}
+.btn-solid:hover{background:#C07A20}
+.btn-green{background:var(--green-bg);color:var(--green);border-color:rgba(46,184,106,0.3)}
+.btn-green:hover{background:rgba(46,184,106,0.2)}
+.btn-violet{background:var(--violet-bg);color:var(--violet);border-color:rgba(123,104,200,0.3)}
+.btn-violet:hover{background:rgba(123,104,200,0.2)}
+.btn-teal{background:var(--teal-bg);color:var(--teal);border-color:rgba(34,168,152,0.3)}
+/* BADGES */
+.badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:12px;font-size:11px;font-weight:500;line-height:1.4;white-space:nowrap}
+.b-t1{background:var(--amber-bg);color:#C8902A}.b-t2{background:var(--blue-bg);color:var(--blue)}.b-t3{background:rgba(255,255,255,0.06);color:var(--muted)}
+.b-sent{background:var(--green-bg);color:var(--green)}.b-opened{background:var(--blue-bg);color:var(--blue)}.b-replied{background:var(--teal-bg);color:var(--teal)}
+.b-pending{background:rgba(255,255,255,0.05);color:var(--dim)}.b-swarmp{background:var(--red-bg);color:var(--red)}.b-approved{background:var(--amber-bg);color:var(--amber)}
+.b-tpla{background:var(--violet-bg);color:var(--violet)}.b-tplb{background:var(--amber-bg);color:#C8902A}.b-tplc{background:var(--teal-bg);color:var(--teal)}
+/* STATS */
+.stat-strip{display:flex;border-bottom:1px solid var(--border);background:var(--sidebar);flex-shrink:0}
+.stat-cell{flex:1;padding:10px 14px;text-align:center}
+.stat-val{font-size:19px;font-weight:600}
+.stat-lbl{font-size:10px;color:var(--dim);margin-top:1px}
+.dash-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px}
+/* FILTER BAR */
+.filter-bar{padding:10px 14px;display:flex;gap:8px;border-bottom:1px solid var(--border);background:var(--bg);flex-shrink:0;flex-wrap:wrap;align-items:center}
+/* INPUTS */
+.inp{background:rgba(255,255,255,0.05);border:1px solid var(--border2);border-radius:6px;color:var(--text);padding:6px 10px;font-size:13px;outline:none;font-family:inherit;transition:border-color .12s}
+.inp:focus{border-color:var(--amber-border)}
+.inp[readonly]{opacity:.6;cursor:default}
+select.inp option{background:var(--surface);color:var(--text)}
+textarea.inp{resize:vertical;line-height:1.7;width:100%}
+/* TABLE */
+.scroll{overflow-y:auto;flex:1}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:8px 10px;font-size:10px;font-weight:500;color:var(--dim);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;background:var(--bg);z-index:1}
+td{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,0.03);vertical-align:middle;font-size:13px}
+tr:hover td{background:rgba(255,255,255,0.02)}
+/* CARD */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:8px}
+/* QUEUE */
+.queue-wrap{display:flex;flex:1;overflow:hidden}
+.side-list{width:200px;min-width:200px;border-right:1px solid var(--border);overflow-y:auto;background:var(--sidebar);flex-shrink:0}
+.side-list-hdr{padding:10px 12px;font-size:10px;font-weight:500;color:var(--dim);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--border)}
+.side-item{padding:10px 12px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.03);border-left:2px solid transparent;transition:all .1s}
+.side-item:hover{background:rgba(255,255,255,0.03)}
+.side-item.selected{background:var(--amber-bg);border-left-color:var(--amber)}
+.side-name{font-weight:500;font-size:12px;color:var(--text)}
+.side-firm{font-size:10px;color:var(--muted);margin-top:1px}
+.side-meta{display:flex;gap:5px;margin-top:5px;align-items:center;flex-wrap:wrap}
+.review-panel{flex:1;display:flex;overflow:hidden}
+.review-main{flex:1;overflow-y:auto;padding:16px 18px}
+.review-ctx{width:206px;min-width:206px;border-left:1px solid var(--border);overflow-y:auto;padding:14px;background:var(--sidebar);flex-shrink:0}
+.ctx-label{font-size:10px;font-weight:500;color:var(--dim);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px}
+.ctx-section{margin-bottom:14px}
+.fisp-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.fisp-cell{background:rgba(255,255,255,0.03);border-radius:6px;padding:7px 8px;border:1px solid rgba(255,255,255,0.05)}
+.fisp-cell.hot{border-color:var(--amber-border)}
+.fisp-val{font-size:16px;font-weight:600;color:var(--text)}
+.fisp-val.hot{color:var(--amber)}
+.fisp-lbl{font-size:9px;color:var(--dim);margin-top:1px}
+.pitch-anchor{font-size:11px;color:var(--muted);line-height:1.6;padding:8px 10px;background:rgba(255,255,255,0.03);border-radius:6px;border-left:2px solid var(--amber)}
+.email-box{background:var(--surface);border:1px solid var(--border);padding:14px;font-size:12px;line-height:1.85;color:var(--muted);white-space:pre-wrap;font-family:'Menlo','Consolas',monospace;min-height:150px;border-radius:8px}
+.email-box.with-sig{border-radius:8px 8px 0 0}
+.sig-divider{background:rgba(255,255,255,0.03);border:1px solid var(--border);border-top:1px solid var(--border2);padding:5px 14px;font-size:10px;color:var(--dim);font-family:'Menlo','Consolas',monospace;letter-spacing:.05em;text-transform:uppercase}
+.sig-preview{background:rgba(255,255,255,0.02);border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;padding:10px 14px;font-size:12px;color:var(--dim);font-family:'Menlo','Consolas',monospace;white-space:pre-wrap;line-height:1.7}
+.diff-rem{background:rgba(192,80,80,0.1);color:#D07070;text-decoration:line-through;border-radius:3px;padding:0 2px}
+.diff-add{background:rgba(46,184,106,0.1);color:var(--green);border-radius:3px;padding:0 2px}
+.mode-tabs{display:flex;gap:6px;margin-bottom:12px}
+.mode-tab{padding:5px 12px;border-radius:6px;border:1px solid var(--border2);cursor:pointer;font-size:12px;background:rgba(255,255,255,0.03);color:var(--muted);font-family:inherit;transition:all .1s}
+.mode-tab.active{border-color:var(--amber-border);color:var(--amber);background:var(--amber-bg)}
+.section-label{font-size:10px;font-weight:500;color:var(--dim);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px}
+.action-bar{margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+/* SEQUENCE TIMELINE */
+.seq-legend{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.seq-legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);padding:3px 10px;background:rgba(255,255,255,0.04);border-radius:20px}
+.seq-legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.seq-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:12px;transition:border-color .15s}
+.seq-card:hover{border-color:var(--border2)}
+.seq-card-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;gap:12px}
+.seq-card-name{font-weight:600;font-size:14px;color:var(--text)}
+.seq-card-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.seq-card-actions{display:flex;gap:7px;align-items:center;flex-shrink:0;flex-wrap:wrap}
+.seq-timeline{display:flex;align-items:flex-start;padding:0 8px}
+.seq-step-col{flex:1;display:flex;flex-direction:column;align-items:center;position:relative}
+.seq-step-line{position:absolute;top:11px;left:50%;width:100%;height:2px;background:rgba(255,255,255,0.08)}
+.seq-step-line.done{background:var(--green)}
+.seq-step-dot{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;z-index:1;border:2px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);color:var(--dim);position:relative}
+.seq-step-lbl{font-size:10px;color:var(--dim);margin-top:6px;text-align:center;line-height:1.3}
+.seq-step-lbl span{color:var(--dim);font-size:9px}
+/* SUB-TABS */
+.sub-tabs{display:flex;gap:4px;background:rgba(255,255,255,0.04);border-radius:8px;padding:3px}
+.sub-tab{padding:5px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:500;font-family:inherit;color:var(--muted);background:transparent;transition:all .12s}
+.sub-tab.active{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,0.3)}
+/* SEQ EDITOR PANEL */
+.panel-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:200}
+.panel-overlay.open{display:block}
+.side-panel{position:fixed;top:0;right:-620px;width:600px;height:100vh;background:var(--sidebar);border-left:1px solid var(--border2);z-index:201;display:flex;flex-direction:column;transition:right .25s ease;overflow:hidden}
+.side-panel.open{right:0}
+.side-panel-hdr{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
+.side-panel-body{flex:1;overflow-y:auto;padding:16px 18px}
+/* SEQ STEP CARDS */
+.seq-email-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;overflow:hidden}
+.seq-email-card.active-step{border-color:var(--amber-border)}
+.seq-email-card.replied-step{border-color:rgba(34,168,152,0.35)}
+.seq-email-hdr{padding:10px 14px;display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.02);border-bottom:1px solid var(--border)}
+.seq-email-body{padding:14px}
+.day-pill{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;background:rgba(255,255,255,0.06);color:var(--muted);white-space:nowrap}
+.day-pill.done{background:var(--green-bg);color:var(--green)}
+.day-pill.curr{background:var(--amber-bg);color:var(--amber)}
+.ai-reply-box{background:rgba(34,168,152,0.06);border:1px solid rgba(34,168,152,0.2);border-radius:8px;padding:12px;margin-bottom:12px}
+/* HTML TEMPLATES PANEL */
+.tpl-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:300}
+.tpl-overlay.open{display:block}
+.tpl-panel{position:fixed;top:0;right:-720px;width:700px;height:100vh;background:var(--sidebar);border-left:1px solid var(--border2);z-index:301;display:flex;flex-direction:column;transition:right .25s ease}
+.tpl-panel.open{right:0}
+.tpl-panel-hdr{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
+.tpl-slot{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;transition:border-color .15s}
+.tpl-slot.has-template{border-color:rgba(34,168,152,0.35)}
+.tpl-slot-hdr{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.tpl-slot-label{font-weight:500;font-size:13px;color:var(--text);flex:1}
+.tpl-slots-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+/* SETTINGS */
+.settings-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px}
+.track-row{display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.03)}
+.track-dot{width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-top:2px;flex-shrink:0;border:1.5px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.03)}
+.track-dot.on{border-color:var(--green);background:var(--green-bg)}
+.track-inner{width:5px;height:5px;border-radius:50%;background:var(--green)}
+/* RICH TEXT SIGNATURE EDITOR */
+.sig-editor-wrap{border:1px solid var(--border2);border-radius:8px;overflow:hidden}
+.sig-toolbar{display:flex;align-items:center;gap:3px;padding:6px 8px;background:rgba(255,255,255,0.04);border-bottom:1px solid var(--border);flex-wrap:wrap}
+.sig-toolbar-btn{width:28px;height:26px;border-radius:5px;border:1px solid transparent;cursor:pointer;font-size:12px;font-weight:700;background:transparent;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;transition:all .1s;font-family:inherit}
+.sig-toolbar-btn:hover{background:rgba(255,255,255,0.08);color:var(--text);border-color:var(--border2)}
+.sig-toolbar-btn.active{background:var(--amber-bg);color:var(--amber);border-color:var(--amber-border)}
+.sig-toolbar-sep{width:1px;height:18px;background:var(--border);margin:0 3px;flex-shrink:0}
+.sig-toolbar select{background:rgba(255,255,255,0.05);border:1px solid var(--border2);border-radius:5px;color:var(--muted);padding:3px 6px;font-size:11px;outline:none;font-family:inherit;cursor:pointer;height:26px}
+.sig-toolbar select:hover{border-color:var(--border);}
+.sig-toolbar select option{background:var(--surface);color:var(--text)}
+.sig-toolbar input[type=color]{width:26px;height:26px;padding:2px;border-radius:5px;border:1px solid var(--border2);background:transparent;cursor:pointer}
+.sig-editor-body{min-height:110px;padding:10px 12px;font-size:13px;color:var(--text);line-height:1.7;outline:none;background:rgba(255,255,255,0.03);caret-color:var(--amber)}
+.sig-editor-body:focus{background:rgba(255,255,255,0.05)}
+.sig-editor-body img{max-width:180px;height:auto;display:inline-block;vertical-align:middle;margin:2px 4px 2px 0}
+.sig-editor-body b,.sig-editor-body strong{color:var(--text)}
+.sig-editor-body i,.sig-editor-body em{color:var(--muted)}
+.err-box{margin-top:8px;padding:7px 10px;background:var(--red-bg);border-radius:6px;color:var(--red);font-size:11px;border:1px solid rgba(192,80,80,0.2)}
+.info-box{padding:10px 12px;background:var(--blue-bg);border-radius:6px;border:1px solid rgba(77,142,200,0.2);font-size:11px;color:var(--blue);line-height:1.65}
+/* TOAST */
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:8px 18px;border-radius:8px;font-size:12px;font-weight:500;z-index:999;pointer-events:none;opacity:0;transition:opacity .2s;white-space:nowrap}
+.toast.show{opacity:1}
+.toast-green{background:var(--green-bg);color:var(--green);border:1px solid rgba(46,184,106,0.3)}
+.toast-amber{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-border)}
+.toast-blue{background:var(--blue-bg);color:var(--blue);border:1px solid rgba(77,142,200,0.3)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{display:inline-block;animation:spin .8s linear infinite}
+/* LINKEDIN MODAL */
+.li-modal-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:500;align-items:center;justify-content:center}
+.li-modal-backdrop.open{display:flex}
+.li-modal{background:var(--sidebar);border:1px solid var(--border2);border-radius:12px;padding:24px;width:380px;max-width:90vw;text-align:center}
+.li-modal-icon{width:52px;height:52px;background:rgba(10,102,194,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 14px}
+.li-modal h3{font-size:15px;font-weight:600;color:var(--text);margin-bottom:8px}
+.li-modal p{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:18px}
+.li-badge{background:rgba(10,102,194,0.12);color:#5B9BD5;border:1px solid rgba(10,102,194,0.25);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:500;white-space:nowrap}
+.li-done{background:var(--green-bg);color:var(--green);border-color:rgba(46,184,106,0.3)}
+</style>
+</head>
+<body>
+
+<!-- OVERLAYS -->
+<div id="toast" class="toast"></div>
+<div class="panel-overlay" id="seq-editor-overlay" onclick="closeSeqEditor()"></div>
+<div class="tpl-overlay" id="tpl-overlay" onclick="closeTemplates()"></div>
+
+<!-- SEQ EDITOR SIDE PANEL -->
+<div class="side-panel" id="seq-editor-panel">
+  <div class="side-panel-hdr">
+    <div style="flex:1">
+      <div style="font-weight:600;font-size:14px;color:var(--text)" id="editor-contact-name">Sequence Editor</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px" id="editor-contact-sub"></div>
+    </div>
+    <button class="btn" onclick="closeSeqEditor()">Close</button>
+  </div>
+  <div class="side-panel-body" id="seq-editor-body"></div>
+</div>
+
+<!-- HTML TEMPLATES PANEL -->
+<div class="tpl-panel" id="tpl-panel">
+  <div class="tpl-panel-hdr">
+    <div style="flex:1">
+      <div style="font-weight:600;font-size:14px;color:var(--text)">HTML Email Templates</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">One unique design per Tier &times; Template combo — 9 slots total</div>
+    </div>
+    <button class="btn" onclick="closeTemplates()">Done</button>
+  </div>
+  <div class="side-panel-body" id="tpl-panel-body"></div>
+</div>
+
+<!-- TOP NAV -->
+<div class="topnav">
+  <span style="font-weight:700;font-size:13px;color:var(--amber);letter-spacing:.04em;margin-right:6px">CAN USA</span>
+  <button id="nav-dashboard" class="nav-btn active" onclick="showView('dashboard')">Dashboard</button>
+  <button id="nav-contacts" class="nav-btn" onclick="showView('contacts')">Contacts</button>
+  <button id="nav-queue" class="nav-btn" onclick="showView('queue')">Review queue <span id="pending-badge" class="nav-badge" style="display:none"></span></button>
+  <button id="nav-seqstudio" class="nav-btn" onclick="showView('seqstudio')">Sequence Studio</button>
+  <button id="nav-bulk" class="nav-btn" onclick="showView('bulk')">Bulk actions</button>
+  <button id="nav-settings" class="nav-btn" onclick="showView('settings')">Settings</button>
+  <div style="flex:1"></div>
+  <span id="hot-alert" style="display:none;font-size:11px;color:var(--red);background:var(--red-bg);padding:4px 10px;border-radius:20px;border:1px solid rgba(192,80,80,0.2);margin-right:10px"></span>
+  <span id="save-status" style="font-size:11px;color:var(--dim);margin-right:12px"></span>
+  <span style="font-size:11px;color:var(--dim)">Pawel &nbsp;·&nbsp; <span style="color:var(--muted)">CAN USA</span></span>
+</div>
+
+<div class="app">
+
+<!-- ═══ DASHBOARD ═══ -->
+<div id="view-dashboard" class="view active">
+  <div class="topbar"><span class="topbar-title" style="flex:1">Campaign dashboard</span><button class="btn" onclick="exportCSV()">Export CSV</button></div>
+  <div class="scroll" style="padding:16px">
+    <div class="dash-grid" id="dash-top"></div>
+    <div class="card" style="margin-bottom:14px;overflow:hidden">
+      <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:11px;font-weight:500;color:var(--muted)">Tier breakdown</div>
+      <table><thead><tr><th>Tier</th><th>Total</th><th>Sent</th><th>Opens</th><th>Open%</th><th>Replies</th><th>Reply%</th></tr></thead><tbody id="tier-tbody"></tbody></table>
+    </div>
+    <div class="card" style="overflow:hidden">
+      <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:11px;font-weight:500;color:var(--muted)">Firm rollup</div>
+      <table><thead><tr><th>Firm</th><th>Contacts</th><th>Sent</th><th>Opens</th><th>Replies</th></tr></thead><tbody id="firm-tbody"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ CONTACTS ═══ -->
+<div id="view-contacts" class="view">
+  <div class="topbar">
+    <span class="topbar-title" style="flex:1">Contacts</span>
+    <input type="file" id="csv-file" accept=".csv" style="display:none" onchange="importCSV(event)"/>
+    <button class="btn" onclick="document.getElementById('csv-file').click()">Import CSV</button>
+    <button class="btn btn-amber" onclick="showView('queue')">Review queue <span id="q-count-btn"></span></button>
+  </div>
+  <div class="stat-strip">
+    <div class="stat-cell"><div class="stat-val" id="st-total" style="color:var(--text)">0</div><div class="stat-lbl">Total</div></div>
+    <div class="stat-cell"><div class="stat-val" id="st-sent" style="color:var(--green)">0</div><div class="stat-lbl">Sent</div></div>
+    <div class="stat-cell"><div class="stat-val" id="st-opened" style="color:var(--blue)">0</div><div class="stat-lbl">Opened</div></div>
+    <div class="stat-cell"><div class="stat-val" id="st-replied" style="color:var(--teal)">0</div><div class="stat-lbl">Replied</div></div>
+  </div>
+  <div class="filter-bar">
+    <input class="inp" id="c-search" placeholder="Search name or firm..." oninput="renderContacts()" style="width:155px"/>
+    <select class="inp" id="c-tier" onchange="renderContacts()" style="width:106px"><option value="all">All tiers</option><option value="1">Tier 1</option><option value="2">Tier 2</option><option value="3">Tier 3</option></select>
+    <select class="inp" id="c-tpl" onchange="renderContacts()" style="width:120px"><option value="all">All templates</option><option value="A">Template A</option><option value="B">Template B</option><option value="C">Template C</option></select>
+    <select class="inp" id="c-status" onchange="renderContacts()" style="width:120px"><option value="all">All</option><option value="unsent">Unsent</option><option value="sent">Sent</option><option value="opened">Opened</option><option value="replied">Replied</option></select>
+  </div>
+  <div class="scroll"><table><thead><tr><th>Contact</th><th>Firm</th><th>Tier</th><th style="text-align:right">Unfiled</th><th style="text-align:right">10A</th><th>SWARMP</th><th>Tpl</th><th>Status</th><th>LinkedIn</th><th></th></tr></thead><tbody id="contacts-tbody"></tbody></table></div>
+</div>
+
+<!-- ═══ REVIEW QUEUE ═══ -->
+<div id="view-queue" class="view">
+  <div class="topbar"><span class="topbar-title" style="flex:1">Review queue</span><span id="bulk-refine-status" style="font-size:12px;color:var(--muted)"></span><button id="btn-bulk-refine" class="btn btn-violet" onclick="doBulkRefine()">Refine all with Claude</button></div>
+  <div class="queue-wrap">
+    <div class="side-list">
+      <div class="side-list-hdr">Pending (<span id="q-pending-count">0</span>)</div>
+      <div id="queue-list-items"></div>
+    </div>
+    <div class="review-panel">
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:13px" id="review-empty">Select a contact to review</div>
+      <div id="review-content" style="display:none;flex:1;overflow:hidden;flex-direction:row" class="review-panel">
+        <div class="review-main">
+          <div id="review-header" style="margin-bottom:14px"></div>
+          <div style="margin-bottom:14px"><div class="section-label">Subject line</div><input class="inp" id="review-subject" style="font-weight:500;width:100%"/></div>
+          <div class="mode-tabs" id="mode-tabs"><button class="mode-tab active" onclick="setMode('orig')">Original</button></div>
+          <div id="email-display"></div><div id="sig-block"></div><div id="err-display"></div>
+          <div class="action-bar">
+            <button class="btn" id="btn-refine" onclick="doRefine()">Refine with Claude</button>
+            <button class="btn" id="btn-reset" style="display:none" onclick="resetToOrig()">Reset</button>
+            <div style="flex:1"></div>
+            <button class="btn" onclick="copyEmail()">Copy</button>
+            <button class="btn" onclick="openInOutlook()">Outlook</button>
+            <button class="btn btn-amber" onclick="doApprove()">Approve</button>
+            <button class="btn btn-solid" onclick="doSend()">Send</button>
+          </div>
+        </div>
+        <div class="review-ctx" id="review-ctx"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SEQUENCE STUDIO ═══ -->
+<div id="view-seqstudio" class="view">
+  <div class="topbar">
+    <span class="topbar-title">Sequence Studio</span>
+    <div class="sub-tabs">
+      <button class="sub-tab active" id="seq-tab-active" onclick="setSeqTab('active')">Active sequences</button>
+      <button class="sub-tab" id="seq-tab-contacts" onclick="setSeqTab('contacts')">All contacts</button>
+    </div>
+    <div style="flex:1"></div>
+    <button class="btn btn-violet" onclick="openTemplates()">HTML templates</button>
+  </div>
+  <!-- Shared filter bar -->
+  <div class="filter-bar">
+    <input class="inp" id="seq-search" placeholder="Search..." oninput="renderSeqStudio()" style="width:140px"/>
+    <select class="inp" id="seq-f-tier" onchange="renderSeqStudio()" style="width:100px"><option value="all">All tiers</option><option value="1">Tier 1</option><option value="2">Tier 2</option><option value="3">Tier 3</option></select>
+    <select class="inp" id="seq-f-tpl" onchange="renderSeqStudio()" style="width:118px"><option value="all">All templates</option><option value="A">Template A</option><option value="B">Template B</option><option value="C">Template C</option></select>
+    <select class="inp" id="seq-f-status" onchange="renderSeqStudio()" style="width:118px"><option value="all">All statuses</option><option value="active">In sequence</option><option value="replied">Replied</option><option value="opened">Opened</option><option value="pending">Not sent</option></select>
+    <span id="seq-filter-count" style="font-size:12px;color:var(--dim);margin-left:4px"></span>
+  </div>
+  <!-- Active sequences view -->
+  <div id="seq-active-view" class="scroll" style="padding:16px">
+    <div id="seq-legend" class="seq-legend"></div>
+    <div id="seq-timeline-list"></div>
+  </div>
+  <!-- All contacts view -->
+  <div id="seq-contacts-view" class="scroll" style="display:none">
+    <table><thead><tr><th>Contact</th><th>Firm</th><th>Tier</th><th>Template</th><th style="text-align:right">Unfiled</th><th>SWARMP</th><th>Status</th><th>Step</th><th>LinkedIn</th><th>HTML design</th><th></th></tr></thead><tbody id="seq-contacts-tbody"></tbody></table>
+  </div>
+</div>
+
+<!-- ═══ BULK ═══ -->
+<div id="view-bulk" class="view">
+  <div class="topbar"><span class="topbar-title" style="flex:1">Bulk actions</span></div>
+  <div style="padding:20px">
+    <div class="card" style="padding:16px;max-width:440px">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.7">Approve contacts by tier and template before sending.</p>
+      <div style="display:flex;gap:10px;margin-bottom:14px">
+        <div style="flex:1"><div class="section-label">Template</div><select class="inp" id="bulk-tpl" onchange="updateBulkCount()" style="width:100%"><option value="">All</option><option value="A">A</option><option value="B" selected>B</option><option value="C">C</option></select></div>
+        <div style="flex:1"><div class="section-label">Tier</div><select class="inp" id="bulk-tier" onchange="updateBulkCount()" style="width:100%"><option value="">All</option><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option></select></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:var(--muted)"><span id="bulk-match-count">0</span> match</span><div style="flex:1"></div><button class="btn btn-solid" id="bulk-approve-btn" onclick="doBulkApprove()">Approve all</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SETTINGS ═══ -->
+<div id="view-settings" class="view">
+  <div class="topbar"><span class="topbar-title">Settings</span></div>
+  <div class="scroll" style="padding:18px;max-width:520px">
+    <div class="settings-card">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div style="width:34px;height:34px;background:var(--blue-bg);border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="color:var(--blue);font-size:16px;font-weight:700">M</span></div>
+        <div style="flex:1"><div style="font-weight:500;color:var(--text);font-size:13px">Microsoft 365 / Outlook</div><div style="font-size:11px;color:var(--muted)">OAuth 2.0 via MSAL.js — sends from Pawel's real address</div></div>
+        <div id="ms-status"><button class="btn btn-amber" onclick="connectMS()">Sign in with Microsoft</button></div>
+      </div>
+      <div id="ms-user-info" style="display:none;margin-bottom:10px"></div>
+      <div id="ms-setup-block">
+        <div class="section-label" style="margin-bottom:6px">Azure App Client ID</div>
+        <div style="display:flex;gap:8px;margin-bottom:10px"><input class="inp" id="azure-client-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style="flex:1;font-family:monospace;font-size:12px"/><button class="btn" onclick="saveClientId()">Save</button></div>
+        <div class="info-box">
+          <strong style="display:block;margin-bottom:5px;color:var(--text)">Pawel registers this himself — no IT admin needed. 5 minutes.</strong>
+          1. Sign in to <strong>portal.azure.com</strong> with CAN USA Microsoft account.<br/>
+          2. Azure Active Directory &rarr; App registrations &rarr; New registration.<br/>
+          3. Name: "CAN USA Outbound" &nbsp;|&nbsp; Redirect URI: <strong>Single-page application (SPA)</strong> &rarr; paste your Netlify URL.<br/>
+          4. Copy the <strong>Application (client) ID</strong> &rarr; paste above &rarr; Save.<br/>
+          5. API permissions &rarr; Add &rarr; <strong>Mail.Send + Mail.ReadWrite</strong> (Delegated).<br/>
+          6. Click "Sign in with Microsoft."<br/><br/>
+          <strong>No Azure yet?</strong> Use Copy or Open in Outlook in the Review queue and Sequence Studio — both work without any setup.
+        </div>
+      </div>
+    </div>
+    <div class="settings-card">
+      <div style="font-weight:500;color:var(--text);font-size:13px;margin-bottom:8px">Data storage</div>
+      <div style="font-size:11px;color:var(--dim);line-height:1.6;margin-bottom:12px">Auto-saved to browser localStorage after every action. Reopening on the same browser restores everything. Export backups to move between devices or browsers.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-green" onclick="exportBackup()">Export backup (.json)</button>
+        <label class="btn" style="cursor:pointer">Import backup<input type="file" accept=".json" style="display:none" onchange="importBackup(event)"/></label>
+        <button class="btn" onclick="clearData()" style="color:var(--red);border-color:rgba(192,80,80,0.25)">Clear all data</button>
+      </div>
+    </div>
+    <div class="settings-card">
+      <div style="font-weight:500;color:var(--text);font-size:13px;margin-bottom:4px">Email signature</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">Appended below every email. Supports rich text, fonts, and a logo image. Rendered as HTML in HTML emails; plain text stripped for clipboard and mailto links.</div>
+      <div class="sig-editor-wrap">
+        <!-- Toolbar -->
+        <div class="sig-toolbar">
+          <button class="sig-toolbar-btn" title="Bold" onmousedown="event.preventDefault();sigExec('bold')"><b>B</b></button>
+          <button class="sig-toolbar-btn" title="Italic" onmousedown="event.preventDefault();sigExec('italic')"><i>I</i></button>
+          <button class="sig-toolbar-btn" title="Underline" onmousedown="event.preventDefault();sigExec('underline')" style="text-decoration:underline">U</button>
+          <div class="sig-toolbar-sep"></div>
+          <select title="Font" onchange="sigExec('fontName',this.value);this.value=''">
+            <option value="">Font</option>
+            <option value="Arial, sans-serif">Arial</option>
+            <option value="Georgia, serif">Georgia</option>
+            <option value="Verdana, sans-serif">Verdana</option>
+            <option value="Trebuchet MS, sans-serif">Trebuchet</option>
+            <option value="Times New Roman, serif">Times New Roman</option>
+            <option value="Courier New, monospace">Courier New</option>
+          </select>
+          <select title="Size" onchange="sigExecSize(this.value);this.value=''">
+            <option value="">Size</option>
+            <option value="1">10px</option>
+            <option value="2">11px</option>
+            <option value="3">12px</option>
+            <option value="4">14px</option>
+            <option value="5">16px</option>
+            <option value="6">18px</option>
+          </select>
+          <div class="sig-toolbar-sep"></div>
+          <input type="color" title="Text color" value="#8695B2" onchange="sigExec('foreColor',this.value)" style="vertical-align:middle"/>
+          <div class="sig-toolbar-sep"></div>
+          <label class="sig-toolbar-btn" title="Insert image" style="width:auto;padding:0 8px;cursor:pointer;font-size:11px;font-weight:500">
+            + Image
+            <input type="file" accept="image/*" style="display:none" onchange="sigInsertImage(this)"/>
+          </label>
+          <div style="flex:1"></div>
+          <button class="sig-toolbar-btn" style="width:auto;padding:0 8px;font-size:11px;font-weight:400" title="Clear signature" onclick="sigClear()">Clear</button>
+        </div>
+        <!-- Editable body -->
+        <div id="sig-editor" class="sig-editor-body" contenteditable="true"
+             oninput="updateSignature()"
+             onkeydown="if(event.key==='Tab'){event.preventDefault();sigExec('insertHTML','&nbsp;&nbsp;&nbsp;&nbsp;');}">
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--dim);margin-top:8px;line-height:1.5">Tip: select text first, then click Bold/Italic/color. For font changes, place cursor in a line first. Images are embedded as base64 so they work without a CDN.</div>
+    </div>
+    <div class="settings-card">
+      <div style="font-weight:500;color:var(--text);font-size:13px;margin-bottom:10px">Send rate throttle</div>
+      <div style="display:flex;align-items:center;gap:12px"><input type="range" min="5" max="60" step="5" value="30" id="rate-slider" oninput="document.getElementById('rate-val').textContent=this.value+' / hour'" style="flex:1;accent-color:var(--amber)"/><span style="color:var(--amber);font-weight:600;min-width:80px;font-size:14px" id="rate-val">30 / hour</span></div>
+    </div>
+    <div class="settings-card" id="tracking-card"></div>
+  </div>
+</div>
+
+<!-- LINKEDIN CONNECTION MODAL -->
+<div class="li-modal-backdrop" id="li-modal-backdrop">
+  <div class="li-modal">
+    <div class="li-modal-icon">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6z" stroke="#5B9BD5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="2" y="9" width="4" height="12" stroke="#5B9BD5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="4" cy="4" r="2" stroke="#5B9BD5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h3 id="li-modal-title">Email sent — send a LinkedIn connection?</h3>
+    <p id="li-modal-body">Opening their profile takes 5 seconds. Connecting on LinkedIn alongside your email significantly increases reply rates.</p>
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+      <button class="btn" style="font-size:13px;padding:8px 16px" onclick="skipLinkedIn()">Skip for now</button>
+      <button class="btn" style="background:rgba(10,102,194,0.15);color:#5B9BD5;border-color:rgba(10,102,194,0.3);font-size:13px;padding:8px 16px" onclick="markLinkedInDone()">Already connected</button>
+      <button class="btn btn-solid" style="background:#0A66C2;border-color:#0A66C2;font-size:13px;padding:8px 18px" onclick="openLinkedIn()">Open LinkedIn profile</button>
+    </div>
+  </div>
+</div>
+</div><!-- .app -->
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+// SEED DATA
+// ══════════════════════════════════════════════════════════════════
+const SEED=[
+  {id:1,firstName:"Richard",lastName:"Koenigsberg",jobTitle:"Principal / QEWI",workEmail:"r.koenigsberg@koenigsbergeng.com",location:"New York, NY",firmName:"Koenigsberg Engineering",linkedinUrl:"https://www.linkedin.com/in/richard-koenigsberg/",tier:1,totalUnfiled:397,sub10A:153,sub10B:124,sub10C:120,wPriorSWARM:89,pitchAnchor:"Largest FISP backlog in NYC, 397 total, 153 in 10A. SWARMP on 89 buildings. No committee, fastest close path.",notes:"Lead with 10A count. Follow up SWARMP angle Day 8.",templateUsed:"B",subjectLine:"Koenigsberg Engineering + 397 buildings + CAN USA",emailBody:"Hi Richard,\n\nPublic DOB data shows Koenigsberg Engineering has 397 Cycle 10 buildings still to file, 153 of them in sub-cycle 10A (deadline: 2/21/2027). With scaffold lead times running 2–4 weeks per building, that math gets tight fast.\n\nAt CAN USA, we provide SPRAT-certified rope access for FISP inspections. Your QEWIs supervise from the ground; our technicians run the ropes. Typical result: 30–50% lower access cost and 2–3 days per building instead of 2–3 weeks, no street closures, no sidewalk shed rental.\n\nWe work alongside your existing scaffold vendors, not as a replacement.\n\nDo you have time over the next week or two to learn more? Let me know what works.",linkedinSummary:"Richard Koenigsberg is a registered architect and QEWI with 25+ years of NYC facade inspection experience.",linkedinUrl:"",linkedinConnected:false,emailSent:false,opened:false,replied:false,bounced:false,sequenceStep:0,approved:false,paused:false},
+  {id:2,firstName:"Michael",lastName:"Larkin",jobTitle:"Senior PM / QEWI",workEmail:"m.larkin@randengineering.com",location:"Brooklyn, NY",firmName:"Rand Engineering & Architecture",linkedinUrl:"https://www.linkedin.com/company/rand-engineering/",tier:1,totalUnfiled:337,sub10A:101,sub10B:118,sub10C:118,wPriorSWARM:62,pitchAnchor:"2nd largest backlog, 337 total, 101 in 10A. Runs FISP ops day-to-day.",notes:"Email Michael first. 7 days no reply, follow up with principal.",templateUsed:"B",subjectLine:"Rand Engineering + 337 buildings + CAN USA",emailBody:"Hi Michael,\n\nPublic DOB data shows Rand Engineering has 337 Cycle 10 buildings still to file, with 101 in sub-cycle 10A (deadline: 2/21/2027). That's a tight window on scaffolding alone.\n\nAt CAN USA, we provide SPRAT-certified rope access for FISP, 30–50% cheaper than suspended scaffold and 2–3 days per building instead of weeks. Your QEWIs supervise; our technicians handle the ropes.\n\nDo you have time over the next week or two to explore this?",linkedinSummary:"Michael Larkin manages facade inspection programs at Rand Engineering.",emailSent:true,opened:true,replied:true,bounced:false,sequenceStep:2,approved:true,paused:false},
+  {id:3,firstName:"Alan",lastName:"Dudley",jobTitle:"Principal Engineer / QEWI",workEmail:"a.dudley@pveengineering.com",location:"Manhattan, NY",firmName:"PVE Engineering",tier:1,totalUnfiled:246,sub10A:84,sub10B:82,sub10C:80,wPriorSWARM:41,pitchAnchor:"246 unfiled, 84 in 10A. Alan recently posted on LinkedIn about DOB enforcement changes.",notes:"Template A: LinkedIn post hook is stronger than the backlog number alone.",templateUsed:"A",subjectLine:"DOB enforcement + PVE's 84 10A buildings + CAN USA",emailBody:"Hi Alan,\n\nI saw your recent post on the DOB enforcement changes, useful context for what we're seeing in the field on rope access jobs.\n\nPVE has 84 buildings in sub-cycle 10A (deadline: 2/21/2027) still to file. That's a tight window on scaffolding.\n\nAt CAN USA, we run SPRAT-certified rope access for FISP: 30–50% cheaper and 2–3 days per building instead of weeks.\n\nDo you have time over the next week or two?",linkedinSummary:"Alan Dudley is a licensed PE and QEWI at PVE Engineering, active on LinkedIn.",emailSent:true,opened:false,replied:false,bounced:false,sequenceStep:1,approved:true,paused:false},
+  {id:4,firstName:"Paul",lastName:"Millman",jobTitle:"Principal / QEWI",workEmail:"p.millman@superstructures.com",location:"New York, NY",firmName:"SUPERSTRUCTURES Eng + Arch",tier:1,totalUnfiled:187,sub10A:61,sub10B:63,sub10C:63,wPriorSWARM:28,pitchAnchor:"Prestige firm, 187 unfiled, 61 in 10A. Lead with NYPL/Capitol Dome credibility.",notes:"Slower close. Containment netting cross-sell viable.",templateUsed:"C",subjectLine:"NYPL + Capitol Dome + FISP rope access",emailBody:"Hi Paul,\n\nCAN USA's rope access team has worked on the NYPL, US Capitol Dome, NASA facilities, and Yale's Kline Tower.\n\nSUPERSTRUCTURES has 187 Cycle 10 buildings still to file, with 61 in sub-cycle 10A (deadline: 2/21/2027). For a firm with your project profile, access methodology matters as much as economics.\n\nRope access: 30–50% lower cost, 2–3 days per building instead of weeks, no street closures.\n\nWorth a conversation?",linkedinSummary:"Paul Millman is a structural engineer and principal at SUPERSTRUCTURES.",linkedinUrl:"",linkedinConnected:false,emailSent:false,opened:false,replied:false,bounced:false,sequenceStep:0,approved:false,paused:false},
+  {id:5,firstName:"Baris",lastName:"Acar",jobTitle:"Principal / QEWI",workEmail:"b.acar@paceengineering.com",location:"Queens, NY",firmName:"Pace Engineering",tier:2,totalUnfiled:194,sub10A:62,sub10B:66,sub10C:66,wPriorSWARM:55,pitchAnchor:"194 unfiled, 55 SWARMP buildings. Highest SWARMP ratio in Tier 2. Auto-Unsafe risk is the primary angle.",notes:"High SWARMP makes Day 8 follow-up easy. Netting cross-sell viable.",templateUsed:"B",subjectLine:"Pace Engineering + 194 buildings + CAN USA",emailBody:"Hi Baris,\n\nDOB data shows Pace Engineering has 194 Cycle 10 buildings still to file, 62 in sub-cycle 10A (deadline: 2/21/2027). With 55 prior SWARMP buildings, the auto-Unsafe risk adds pressure.\n\nAt CAN USA, we provide SPRAT-certified rope access for FISP: 30–50% cheaper and 2–3 days per building. For Unsafe buildings, we also provide DOB-compliant containment netting.\n\nDo you have time over the next week or two?",linkedinSummary:"Baris Acar is principal at Pace Engineering.",emailSent:true,opened:false,replied:false,bounced:false,sequenceStep:1,approved:true,paused:false},
+  {id:6,firstName:"Christopher",lastName:"Krepcio",jobTitle:"Principal / QEWI",workEmail:"c.krepcio@merritteng.com",location:"New York, NY",firmName:"Merritt Engineering Consultants",tier:1,totalUnfiled:235,sub10A:74,sub10B:80,sub10C:81,wPriorSWARM:37,pitchAnchor:"235 unfiled, 74 in 10A. Rope access economics strong for smaller residential buildings.",notes:"May need buy-in from second principal.",templateUsed:"B",subjectLine:"Merritt Engineering + 235 buildings + CAN USA",emailBody:"Hi Christopher,\n\nPublic DOB data shows Merritt Engineering has 235 Cycle 10 buildings still to file, 74 in sub-cycle 10A (deadline: 2/21/2027). On scaffolding, that's a difficult window.\n\nAt CAN USA, we provide SPRAT-certified rope access for FISP: 30–50% lower cost and 2–3 days per building instead of 2–3 weeks.\n\nDo you have time over the next week or two?",linkedinSummary:"Christopher Krepcio is principal at Merritt Engineering Consultants.",linkedinUrl:"",linkedinConnected:false,emailSent:false,opened:false,replied:false,bounced:false,sequenceStep:0,approved:false,paused:false}
+];
+
+const SEQ_META=[
+  {day:0,label:"Initial"},
+  {day:4,label:"Follow-up A"},
+  {day:8,label:"Follow-up B"},
+  {day:12,label:"Follow-up C"},
+  {day:21,label:"Follow-up D"}
+];
+const SEQ_STEP_COLORS=['#2EB86A','#4D8EC8','#D98B28','#C05050','#4D5F7A'];
+const TPL={A:{label:"Template A",desc:"LinkedIn hook",cls:"b-tpla"},B:{label:"Template B",desc:"Backlog-led",cls:"b-tplb"},C:{label:"Template C",desc:"Prestige",cls:"b-tplc"}};
+
+// HTML Template slot keys: T1-A, T1-B, T1-C, T2-A ... T3-C
+const TPL_SLOT_KEYS=[];
+[1,2,3].forEach(t=>['A','B','C'].forEach(p=>TPL_SLOT_KEYS.push(`T${t}-${p}`)));
+
+// ══════════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════════
+const STORAGE_KEY='canusa_v3';
+let contacts=[], seqEmails={}, userSignature='', azureClientId='';
+let htmlTemplates={}; // { 'T1-B': {html:'...', name:'...', uploadedAt:'...'}, ... }
+let selectedQueueId=null, currentMode='orig', refinedBody='', activeBody='';
+let selectedSeqEditorId=null;
+let seqCurrentTab='active';
+let msConnected=false, msAccount=null, msalInstance=null;
+
+function defaultSig(){return`<div style="font-family:Arial,sans-serif;font-size:13px;color:#8695B2;line-height:1.7"><strong style="color:#DCE3F2;font-size:14px">Pawel Wojcik</strong><br/><span style="color:#D98B28">Special Rigger | CAN USA</span><br/>E: pawel@canusa.com<br/>P: (212) 555-0180<br/>www.canusa.com</div>`;}
+
+// ══════════════════════════════════════════════════════════════════
+// SEQUENCE EMAIL DEFAULTS
+// ══════════════════════════════════════════════════════════════════
+function defaultSeqEmail(step,c){
+  switch(step){
+    case 0:return{subject:c.subjectLine,body:c.emailBody};
+    case 1:return{subject:`Re: ${c.subjectLine}`,body:`Hi ${c.firstName},\n\nJust following up to make sure my previous note didn't get buried. ${c.firmName} has ${c.sub10A} buildings in sub-cycle 10A with the 2/21/2027 deadline approaching.\n\nHappy to keep it to 15 minutes. What works over the next week or two?`};
+    case 2:return{subject:`${c.firmName} + SWARMP risk + CAN USA`,body:`Hi ${c.firstName},\n\nOne more angle: ${c.firmName} has ${c.wPriorSWARM} buildings with prior SWARMP classifications. At sub-cycle 10A close (2/21/2027), those auto-classify as Unsafe if unfiled, triggering mandatory sidewalk sheds or netting.\n\nRope access clears those buildings faster. And if any turn up Unsafe, we install DOB-compliant containment netting as the alternative to sidewalk sheds.\n\nWorth 15 minutes?`};
+    case 3:return{subject:`2/21/2027 — ${c.sub10A} buildings, ${c.firmName}`,body:`Hi ${c.firstName},\n\nI'll be direct: sub-cycle 10A closes 2/21/2027. ${c.firmName} has ${c.sub10A} buildings to file. Scaffold at 2–4 weeks per building means you're compressing against the deadline.\n\nRope access at 2–3 days per building is the only realistic path through ${c.sub10A} buildings before February.\n\nDo you have 15 minutes this week?`};
+    case 4:return{subject:`Last note — ${c.firmName} + CAN USA`,body:`Hi ${c.firstName},\n\nThis is my last follow-up.\n\nIf the 10A deadline (2/21/2027) ever becomes a live problem for ${c.firmName}, we're the fastest path through it. Just reply and I'll get something on the calendar same day.\n\nWishing you a smooth inspection season.`};
+    default:return{subject:'',body:''};
+  }
+}
+
+function getSeqEmail(contactId,step){
+  if(!seqEmails[contactId])seqEmails[contactId]={};
+  if(!seqEmails[contactId][step]){
+    const c=getC(contactId);if(!c)return{subject:'',body:''};
+    seqEmails[contactId][step]=defaultSeqEmail(step,c);
+  }
+  return seqEmails[contactId][step];
+}
+
+function saveSeqField(contactId,step,field,value){
+  if(!seqEmails[contactId])seqEmails[contactId]={};
+  if(!seqEmails[contactId][step])seqEmails[contactId][step]=defaultSeqEmail(step,getC(contactId));
+  seqEmails[contactId][step][field]=value;save();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// HTML TEMPLATE APPLICATION
+// ══════════════════════════════════════════════════════════════════
+function getHtmlTemplate(tier,templateUsed){
+  const key=`T${tier}-${templateUsed}`;
+  return htmlTemplates[key]||null;
+}
+
+function applyHtmlTemplate(templateHtml,contact,emailBody,subject){
+  const sig=userSignature||'';
+  const sigParts=sig.split('\n');
+  const bodyHtml=emailBody.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br/>');
+  return templateHtml
+    .replace(/\{\{firstName\}\}/g,contact.firstName)
+    .replace(/\{\{lastName\}\}/g,contact.lastName)
+    .replace(/\{\{fullName\}\}/g,`${contact.firstName} ${contact.lastName}`)
+    .replace(/\{\{firmName\}\}/g,contact.firmName)
+    .replace(/\{\{emailBody\}\}/g,`<p>${bodyHtml}</p>`)
+    .replace(/\{\{emailBodyPlain\}\}/g,emailBody)
+    .replace(/\{\{subject\}\}/g,subject)
+    .replace(/\{\{totalUnfiled\}\}/g,contact.totalUnfiled)
+    .replace(/\{\{sub10A\}\}/g,contact.sub10A)
+    .replace(/\{\{sub10B\}\}/g,contact.sub10B)
+    .replace(/\{\{wPriorSWARM\}\}/g,contact.wPriorSWARM)
+    .replace(/\{\{deadline10A\}\}/g,'2/21/2027')
+    .replace(/\{\{senderName\}\}/g,sigParts[0]||'Pawel')
+    .replace(/\{\{senderTitle\}\}/g,sigParts[1]||'Special Rigger | CAN USA')
+    .replace(/\{\{senderEmail\}\}/g,sigParts.find(l=>l.includes('@'))||'pawel@canusa.com')
+    .replace(/\{\{signature\}\}/g,userSignature||sig.replace(/\n/g,'<br/>'));
+}
+
+// ══════════════════════════════════════════════════════════════════
+// LOCALSTORAGE
+// ══════════════════════════════════════════════════════════════════
+function save(){
+  try{
+    const data={contacts,seqEmails,htmlTemplates,userSignature,azureClientId,savedAt:new Date().toISOString()};
+    localStorage.setItem(STORAGE_KEY,JSON.stringify(data));
+    const el=document.getElementById('save-status');
+    if(el)el.textContent='Saved '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  }catch(e){console.warn('Storage full:',e);}
+}
+
+function load(){
+  try{
+    const raw=localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      const d=JSON.parse(raw);
+      contacts=d.contacts&&d.contacts.length?d.contacts:[...SEED];
+      seqEmails=d.seqEmails||{};
+      htmlTemplates=d.htmlTemplates||{};
+      userSignature=d.userSignature||defaultSig();
+      azureClientId=d.azureClientId||'';
+      const el=document.getElementById('save-status');
+      if(el&&d.savedAt){const dt=new Date(d.savedAt);el.textContent='Restored '+dt.toLocaleDateString([],{month:'short',day:'numeric'})+' '+dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
+    }else{contacts=[...SEED];userSignature=defaultSig();}
+  }catch(e){contacts=[...SEED];userSignature=defaultSig();}
+  document.getElementById('sig-editor').innerHTML=userSignature;
+  if(azureClientId)document.getElementById('azure-client-id').value=azureClientId;
+}
+
+function exportBackup(){
+  const a=document.createElement('a');
+  a.href='data:application/json,'+encodeURIComponent(JSON.stringify({contacts,seqEmails,htmlTemplates,userSignature,azureClientId,exportedAt:new Date().toISOString()},null,2));
+  a.download='canusa_backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();
+  toast('Backup exported','green');
+}
+function importBackup(e){
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    try{
+      const d=JSON.parse(ev.target.result);
+      if(!d.contacts)throw new Error('Invalid backup');
+      if(!confirm('Replace all current data with backup?'))return;
+      contacts=d.contacts;seqEmails=d.seqEmails||{};htmlTemplates=d.htmlTemplates||{};
+      userSignature=d.userSignature||defaultSig();azureClientId=d.azureClientId||'';
+      document.getElementById('sig-editor').innerHTML=userSignature;
+      if(azureClientId)document.getElementById('azure-client-id').value=azureClientId;
+      save();renderDashboard();updateGlobals();
+      toast('Backup restored — '+contacts.length+' contacts','green');
+    }catch(err){alert('Import failed: '+err.message);}
+  };r.readAsText(f);
+}
+function clearData(){
+  if(!confirm('Delete all data?'))return;if(!confirm('Last chance — cannot be undone.'))return;
+  localStorage.removeItem(STORAGE_KEY);contacts=[...SEED];seqEmails={};htmlTemplates={};
+  userSignature=defaultSig();document.getElementById('sig-editor').innerHTML=userSignature;
+  save();renderDashboard();updateGlobals();toast('Cleared','amber');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// TOAST & HELPERS
+// ══════════════════════════════════════════════════════════════════
+let _tt;
+function toast(msg,type='green'){
+  const el=document.getElementById('toast');el.textContent=msg;el.className='toast toast-'+type+' show';
+  clearTimeout(_tt);_tt=setTimeout(()=>el.classList.remove('show'),3200);
+}
+function badge(cls,txt){return`<span class="badge ${cls}">${txt}</span>`;}
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function getC(id){return contacts.find(c=>c.id===id);}
+function updateC(id,ch){contacts=contacts.map(c=>c.id===id?{...c,...ch}:c);save();}
+function cleanEmDashes(t){return(t||'').replace(/ \u2014 /g,', ');}
+function statusBadge(c){
+  if(c.replied)return badge('b-replied','Replied');if(c.opened)return badge('b-opened','Opened');
+  if(c.emailSent)return badge('b-sent','Sent');if(c.approved)return badge('b-approved','Approved');
+  return badge('b-pending','Pending');
+}
+function lineDiff(o,r){
+  const oL=(o||'').split('\n'),rL=(r||'').split('\n'),res=[];
+  const mx=Math.max(oL.length,rL.length);
+  for(let i=0;i<mx;i++){const a=oL[i]??'',b=rL[i]??'';if(a===b)res.push({t:'s',v:a});else{if(a)res.push({t:'r',v:a});if(b)res.push({t:'a',v:b});}}
+  return res;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// NAVIGATION
+// ══════════════════════════════════════════════════════════════════
+function showView(v){
+  document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
+  document.getElementById('view-'+v).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(el=>el.classList.remove('active'));
+  document.getElementById('nav-'+v).classList.add('active');
+  if(v==='dashboard')renderDashboard();
+  if(v==='contacts')renderContacts();
+  if(v==='queue')renderQueue();
+  if(v==='seqstudio')renderSeqStudio();
+  if(v==='bulk')updateBulkCount();
+  if(v==='settings')renderTracking();
+  updateGlobals();
+}
+
+function updateGlobals(){
+  const p=contacts.filter(c=>!c.emailSent&&!c.approved).length;
+  const pb=document.getElementById('pending-badge');if(p>0){pb.style.display='inline';pb.textContent=p;}else pb.style.display='none';
+  const qcb=document.getElementById('q-count-btn');if(qcb)qcb.textContent=p>0?'('+p+')':'';
+  const hot=contacts.filter(c=>c.wPriorSWARM>50&&!c.emailSent).length;
+  const ha=document.getElementById('hot-alert');if(hot>0){ha.style.display='inline';ha.textContent=hot+' HOT SWARMP';}else ha.style.display='none';
+  ['st-total','st-sent','st-opened','st-replied'].forEach((id,i)=>{
+    const v=[contacts.length,contacts.filter(c=>c.emailSent).length,contacts.filter(c=>c.opened).length,contacts.filter(c=>c.replied).length][i];
+    const el=document.getElementById(id);if(el)el.textContent=v;
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════
+// CONTACTS VIEW
+// ══════════════════════════════════════════════════════════════════
+function renderContacts(){
+  updateGlobals();
+  const s=(document.getElementById('c-search')?.value||'').toLowerCase();
+  const ft=document.getElementById('c-tier')?.value||'all';
+  const fp=document.getElementById('c-tpl')?.value||'all';
+  const fs=document.getElementById('c-status')?.value||'all';
+  const filtered=contacts
+    .filter(c=>ft==='all'||String(c.tier)===ft)
+    .filter(c=>fp==='all'||c.templateUsed===fp)
+    .filter(c=>{
+      if(fs==='all')return true;
+      if(fs==='unsent')return!c.emailSent;
+      if(fs==='sent')return c.emailSent;
+      if(fs==='opened')return c.opened;
+      if(fs==='replied')return c.replied;
+      return true;
+    })
+    .filter(c=>!s||`${c.firstName} ${c.lastName} ${c.firmName}`.toLowerCase().includes(s))
+    .sort((a,b)=>a.tier-b.tier||b.totalUnfiled-a.totalUnfiled);
+  const tb=document.getElementById('contacts-tbody');if(!tb)return;
+  if(!filtered.length){
+    tb.innerHTML='<tr><td colspan="10" style="text-align:center;padding:32px;color:var(--dim);font-size:13px">No contacts match.</td></tr>';
+    return;
+  }
+  tb.innerHTML=filtered.map(c=>{
+    const uc=c.totalUnfiled>250?'var(--amber)':c.totalUnfiled>150?'#A88040':'var(--muted)';
+    const sw=c.wPriorSWARM>50
+      ?badge('b-swarmp',`HOT ${c.wPriorSWARM}`)
+      :c.wPriorSWARM>0
+        ?`<span style="color:var(--muted);font-size:12px">${c.wPriorSWARM}</span>`
+        :`<span style="color:var(--dim);font-size:12px">—</span>`;
+    const rb=!c.emailSent
+      ?`<button class="btn" style="font-size:11px;padding:4px 9px" onclick="openReview(${c.id})">Review</button>`
+      :'';
+    const liCel=c.emailSent
+      ?(c.linkedinConnected
+        ?`<span class="li-badge li-done">Connected</span>`
+        :`<button class="btn" style="font-size:11px;padding:3px 9px;background:rgba(10,102,194,0.12);color:#5B9BD5;border-color:rgba(10,102,194,0.25)" onclick="promptLinkedIn(${c.id})">Connect</button>`)
+      :`<span style="font-size:11px;color:var(--dim)">—</span>`;
+    return `<tr>
+      <td style="white-space:nowrap"><div style="font-weight:500;color:var(--text);font-size:13px">${c.firstName} ${c.lastName}</div><div style="font-size:11px;color:var(--dim);margin-top:1px">${c.jobTitle}</div></td>
+      <td><div style="font-size:12px;color:var(--muted);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.firmName}</div></td>
+      <td>${badge('b-t'+c.tier,'T'+c.tier)}</td>
+      <td style="text-align:right;font-weight:600;color:${uc}">${c.totalUnfiled}</td>
+      <td style="text-align:right;color:var(--muted);font-size:12px">${c.sub10A}</td>
+      <td>${sw}</td>
+      <td>${badge(TPL[c.templateUsed]?.cls||'b-tplb',c.templateUsed)}</td>
+      <td>${statusBadge(c)}</td>
+      <td>${liCel}</td>
+      <td>${rb}</td>
+    </tr>`;
+  }).join('');
+}
+function openReview(id){selectedQueueId=id;showView('queue');}
+
+function importCSV(e){
+  const file=e.target.files[0];if(!file)return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    try{
+      const lines=ev.target.result.trim().split('\n');
+      const heads=lines[0].split(',').map(h=>h.trim().replace(/"/g,''));
+      const parsed=lines.slice(1).map((line,idx)=>{
+        const vals=[];let cur='',inQ=false;
+        for(const ch of line){if(ch==='"')inQ=!inQ;else if(ch===','&&!inQ){vals.push(cur.trim());cur='';}else cur+=ch;}
+        vals.push(cur.trim());const obj={};heads.forEach((h,i)=>{obj[h]=vals[i]||'';});
+        return{id:Date.now()+idx,firstName:obj['First Name']||'',lastName:obj['Last Name']||'',jobTitle:obj['Job Title']||'',workEmail:obj['Work Email']||'',location:obj['Location']||'',firmName:obj['Firm Name']||obj['Company Name']||'',tier:parseInt(obj['Tier'])||3,totalUnfiled:parseInt(obj['Total Unfiled'])||0,sub10A:parseInt(obj['Sub_10A'])||0,sub10B:parseInt(obj['Sub_10B'])||0,sub10C:parseInt(obj['Sub_10C'])||0,wPriorSWARM:parseInt(obj['W/ Prior SWARMP'])||0,pitchAnchor:obj['Pitch Anchor']||'',notes:obj['Notes']||'',templateUsed:obj['Template Used']||'B',subjectLine:obj['Subject Line']||'',emailBody:cleanEmDashes(obj['Email Body']||''),linkedinSummary:obj['Summarize LinkedIn profile']||'',linkedinUrl:obj['LinkedIn Profile']||obj['LinkedIn URL']||'',linkedinConnected:false,linkedinUrl:"",linkedinConnected:false,emailSent:false,opened:false,replied:false,bounced:false,sequenceStep:0,approved:false,paused:false};
+      });
+      contacts=[...contacts,...parsed];save();renderContacts();
+      toast(parsed.length+' contacts imported','green');
+    }catch(err){alert('CSV error: '+err.message);}
+  };r.readAsText(file);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// REVIEW QUEUE
+// ══════════════════════════════════════════════════════════════════
+function renderQueue(){
+  const pending=contacts.filter(c=>!c.emailSent).sort((a,b)=>a.tier-b.tier||b.totalUnfiled-a.totalUnfiled);
+  document.getElementById('q-pending-count').textContent=pending.length;
+  const unrefined=pending.filter(c=>!c.refined).length;
+  const brBtn=document.getElementById('btn-bulk-refine');
+  if(brBtn)brBtn.textContent=unrefined>0?`Refine all (${unrefined}) with Claude`:'All refined ✓';
+  document.getElementById('queue-list-items').innerHTML=pending.map(c=>`<div class="side-item${c.id===selectedQueueId?' selected':''}" onclick="selectQueue(${c.id},this)"><div class="side-name">${c.firstName} ${c.lastName}${c.refined?' <span style=\"font-size:9px;color:var(--violet)\">✦</span>':''}</div><div class="side-firm">${c.firmName}</div><div class="side-meta">${badge('b-t'+c.tier,'T'+c.tier)}<span style="font-size:10px;color:${c.totalUnfiled>200?'var(--amber)':'var(--muted)'}">${c.totalUnfiled}</span>${c.wPriorSWARM>50?badge('b-swarmp','HOT'):''}</div></div>`).join('');
+  if(!selectedQueueId&&pending.length>0)selectedQueueId=pending[0].id;
+  if(selectedQueueId)loadReviewContact(selectedQueueId);else showEmptyReview();
+}
+
+function selectQueue(id,el){
+  selectedQueueId=id;currentMode='orig';refinedBody='';
+  document.querySelectorAll('#queue-list-items .side-item').forEach(e=>e.classList.remove('selected'));
+  el.classList.add('selected');loadReviewContact(id);
+}
+
+function loadReviewContact(id){
+  const c=getC(id);if(!c)return showEmptyReview();
+  activeBody=c.refinedEmailBody||c.emailBody;currentMode='orig';refinedBody=c.refinedEmailBody||'';
+  document.getElementById('review-empty').style.display='none';document.getElementById('review-content').style.display='flex';
+  document.getElementById('review-header').innerHTML=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px"><span style="font-weight:600;font-size:14px;color:var(--text)">${c.firstName} ${c.lastName}</span><span style="font-size:11px;color:var(--muted)">${c.jobTitle}</span>${badge('b-t'+c.tier,'Tier '+c.tier)} ${badge(TPL[c.templateUsed]?.cls,'Tpl '+c.templateUsed)} ${c.wPriorSWARM>50?badge('b-swarmp','SWARMP HOT'):''}</div><div style="font-size:12px;color:var(--muted)">${c.firmName} &nbsp;·&nbsp; ${c.workEmail}</div>`;
+  document.getElementById('review-subject').value=c.subjectLine;
+  document.getElementById('btn-refine').textContent=c.refined?'Re-refine with Claude':'Refine with Claude';document.getElementById('btn-reset').style.display=c.refined?'inline-flex':'none';document.getElementById('err-display').innerHTML='';
+  renderModeTabs();renderEmailDisplay();renderSigBlock();renderQueueCtx(c);
+}
+
+function renderModeTabs(){
+  let h=`<button class="mode-tab${currentMode==='orig'?' active':''}" onclick="setMode('orig')">Original</button>`;
+  if(refinedBody){h+=`<button class="mode-tab${currentMode==='diff'?' active':''}" onclick="setMode('diff')">Diff</button><button class="mode-tab${currentMode==='edit'?' active':''}" onclick="setMode('edit')">Refined</button>`;}
+  document.getElementById('mode-tabs').innerHTML=h;
+}
+function setMode(m){
+  currentMode=m;
+  if(m==='orig'){const c=getC(selectedQueueId);if(c)activeBody=c.emailBody;}
+  if(m==='edit')activeBody=refinedBody;
+  renderModeTabs();renderEmailDisplay();renderSigBlock();
+}
+function renderEmailDisplay(){
+  const el=document.getElementById('email-display');const hasSig=userSignature.trim();
+  if(currentMode==='orig'){el.innerHTML=`<div class="email-box${hasSig?' with-sig':''}">${esc(activeBody)}</div>`;}
+  else if(currentMode==='refining'){el.innerHTML=`<div class="email-box" style="display:flex;align-items:center;justify-content:center;border-color:var(--amber-border)"><span class="spin" style="color:var(--amber);font-size:18px;margin-right:10px">&#8635;</span><span style="color:var(--amber);font-size:13px">Refining with Claude...</span></div>`;}
+  else if(currentMode==='diff'){
+    const c=getC(selectedQueueId);const diff=lineDiff(c.emailBody,refinedBody);
+    let h=`<div class="email-box${hasSig?' with-sig':''}" style="font-family:Menlo,Consolas,monospace"><div style="font-size:10px;color:var(--dim);margin-bottom:10px;display:flex;gap:14px"><span><span class="diff-rem">removed</span></span><span><span class="diff-add">added</span></span></div>`;
+    diff.forEach(d=>{if(d.t==='s')h+=`<span style="color:var(--muted)">${esc(d.v)}</span>\n`;else if(d.t==='r')h+=`<span class="diff-rem">${esc(d.v)}</span>\n`;else h+=`<span class="diff-add">${esc(d.v)}</span>\n`;});
+    el.innerHTML=h+'</div>';
+  }else if(currentMode==='edit'){el.innerHTML=`<textarea class="inp email-box${hasSig?' with-sig':''}" id="edit-body" style="min-height:150px;font-family:Menlo,Consolas,monospace;font-size:12px;line-height:1.8" oninput="activeBody=this.value">${esc(activeBody)}</textarea>`;}
+}
+function renderSigBlock(){
+  const el=document.getElementById('sig-block');if(!el)return;
+  if(!userSignature||!userSignature.trim()){el.innerHTML='';return;}
+  el.innerHTML=`<div class="sig-divider">— signature</div><div class="sig-preview" style="font-family:inherit;white-space:normal">${userSignature}</div>`;
+}
+function renderQueueCtx(c){
+  const el=document.getElementById('review-ctx');
+  const cells=[{l:'Total',v:c.totalUnfiled,hot:c.totalUnfiled>200},{l:'10A',v:c.sub10A,hot:c.sub10A>80},{l:'10B',v:c.sub10B,hot:false},{l:'SWARMP',v:c.wPriorSWARM,hot:c.wPriorSWARM>50}];
+  const fisp='<div class="fisp-grid">'+cells.map(f=>'<div class="fisp-cell'+(f.hot?' hot':'')+'"><div class="fisp-val'+(f.hot?' hot':'')+'">'+( f.v||0)+'</div><div class="fisp-lbl">'+f.l+'</div></div>').join('')+'</div>';
+  let html='<div class="ctx-section"><div class="ctx-label">FISP backlog</div>'+fisp+'</div>';
+  if(c.pitchAnchor) html+='<div class="ctx-section"><div class="ctx-label">Pitch anchor</div><div class="pitch-anchor">'+esc(c.pitchAnchor)+'</div></div>';
+  if(c.notes)       html+='<div class="ctx-section"><div class="ctx-label">Notes</div><div style="font-size:11px;color:var(--muted);line-height:1.6">'+esc(c.notes)+'</div></div>';
+  if(c.linkedinSummary) html+='<div class="ctx-section"><div class="ctx-label">LinkedIn summary</div><div style="font-size:11px;color:var(--muted);line-height:1.6">'+esc(c.linkedinSummary)+'</div></div>';
+  const liBtn=c.linkedinConnected
+    ?'<span class="li-badge li-done" style="font-size:11px">Connected</span>'
+    :'<button class="btn" style="font-size:11px;padding:4px 10px;background:rgba(10,102,194,0.12);color:#5B9BD5;border-color:rgba(10,102,194,0.25)" onclick="promptLinkedIn('+c.id+')">'+(c.emailSent?'Connect on LinkedIn':'Send email first')+'</button>';
+  html+='<div class="ctx-section"><div class="ctx-label">LinkedIn connection</div>'+liBtn+'</div>';
+  el.innerHTML=html;
+}
+function showEmptyReview(){document.getElementById('review-empty').style.display='flex';document.getElementById('review-content').style.display='none';}
+
+async function doRefine(){
+  if(!selectedQueueId)return;
+  const body=activeBody||getC(selectedQueueId)?.emailBody||'';
+  currentMode='refining';document.getElementById('btn-refine').disabled=true;document.getElementById('err-display').innerHTML='';
+  renderModeTabs();renderEmailDisplay();
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      model:'claude-sonnet-4-20250514',max_tokens:1000,
+      system:`Edit this cold outbound email from Pawel (Special Rigger, CAN USA) to NYC architect principals. (1) tighten to under 200 words; (2) replace em dashes as sentence connectors with commas or periods, preserve en dashes in ranges; (3) remove AI-sounding phrases; (4) preserve FISP data hooks; (5) no sign-off. Return only the refined body.`,
+      messages:[{role:'user',content:body}]
+    })});
+    const data=await res.json();if(data.error)throw new Error(data.error.message);
+    refinedBody=data.content[0].text;activeBody=refinedBody;currentMode='diff';
+    contacts=contacts.map(x=>x.id===selectedQueueId?{...x,refinedEmailBody:refinedBody,refined:true}:x);save();
+    document.getElementById('btn-refine').textContent='Regenerate';document.getElementById('btn-reset').style.display='inline-flex';
+  }catch(e){document.getElementById('err-display').innerHTML=`<div class="err-box">${e.message}</div>`;currentMode='orig';}
+  document.getElementById('btn-refine').disabled=false;renderModeTabs();renderEmailDisplay();renderSigBlock();
+}
+function resetToOrig(){const c=getC(selectedQueueId);if(!c)return;activeBody=c.emailBody;refinedBody='';currentMode='orig';document.getElementById('btn-reset').style.display='none';document.getElementById('btn-refine').textContent='Refine with Claude';renderModeTabs();renderEmailDisplay();renderSigBlock();}
+async function doBulkRefine(){
+  const pending=contacts.filter(c=>!c.emailSent&&c.emailBody&&!c.refined);
+  if(!pending.length){toast('All emails already refined','amber');return;}
+  if(!confirm(`Refine all ${pending.length} email body${pending.length>1?'s':''} with Claude?\nThis takes ~${pending.length*2} seconds.`))return;
+  const btn=document.getElementById('btn-bulk-refine');
+  const statusEl=document.getElementById('bulk-refine-status');
+  btn.disabled=true;
+  let done=0,failed=0;
+  for(let i=0;i<pending.length;i++){
+    const c=pending[i];
+    if(statusEl)statusEl.textContent=`Refining ${i+1} of ${pending.length}...`;
+    try{
+      const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',max_tokens:800,
+        system:`Edit this cold outbound email from Pawel (Special Rigger, CAN USA) to NYC architect principals. Rules: (1) tighten to under 200 words; (2) replace em dashes used as sentence connectors with commas or periods — preserve en dashes in ranges like 2–3 days or 30–50%; (3) remove AI-sounding phrases like "I wanted to reach out", "I hope this finds you well", "it's worth noting"; (4) preserve the FISP data hook (unfiled building counts, deadlines); (5) no sign-off — appended separately. Return only the refined body, nothing else.`,
+        messages:[{role:'user',content:c.emailBody}]
+      })});
+      const data=await res.json();
+      if(!data.error){
+        contacts=contacts.map(x=>x.id===c.id?{...x,refinedEmailBody:data.content[0].text,refined:true}:x);
+        done++;
+      }else{failed++;}
+    }catch(e){failed++;}
+    if(i<pending.length-1)await new Promise(r=>setTimeout(r,800));
+  }
+  save();
+  btn.disabled=false;
+  if(statusEl)statusEl.textContent='';
+  renderQueue();
+  toast(`Refined ${done} email${done!==1?'s':''}${failed?` (${failed} failed)`:''}. Review individually before sending.`,'green');
+}
+function doApprove(){if(!selectedQueueId)return;updateC(selectedQueueId,{approved:true,emailBody:activeBody,subjectLine:document.getElementById('review-subject').value});advanceQueue();toast('Approved','green');}
+async function doSend(){
+  if(!selectedQueueId)return;const c=getC(selectedQueueId);if(!c)return;
+  const subj=document.getElementById('review-subject').value;
+  const full=activeBody+(sigText()?'\n\n'+sigText():'');
+  if(msConnected&&msAccount){
+    try{
+      const tpl=getHtmlTemplate(c.tier,c.templateUsed);
+      const htmlContent=tpl?applyHtmlTemplate(tpl.html,c,activeBody,subj):null;
+      await sendViaGraph(c.workEmail,subj,full,htmlContent);
+      updateC(selectedQueueId,{emailSent:true,approved:true,emailBody:full,subjectLine:subj,sequenceStep:1});
+      toast('Sent via Outlook','green');
+    }catch(e){document.getElementById('err-display').innerHTML=`<div class="err-box">Send failed: ${e.message}</div>`;return;}
+  }else{
+    updateC(selectedQueueId,{emailSent:true,approved:true,emailBody:full,subjectLine:subj,sequenceStep:1});
+    toast('Marked sent. Connect Outlook to send directly.','amber');
+  }
+  const sentContact=getC(selectedQueueId);
+  advanceQueue();
+  if(sentContact&&!sentContact.linkedinConnected)promptLinkedIn(sentContact.id);
+}
+function copyEmail(){const c=getC(selectedQueueId);if(!c)return;const st=sigText();navigator.clipboard.writeText(`Subject: ${document.getElementById('review-subject').value}\n\n${activeBody}${st?'\n\n'+st:''}`).then(()=>toast('Copied','blue')).catch(()=>toast('Copy failed','amber'));}
+function openInOutlook(){const c=getC(selectedQueueId);if(!c)return;const st=sigText();window.open(`mailto:${c.workEmail}?subject=${encodeURIComponent(document.getElementById('review-subject').value)}&body=${encodeURIComponent(activeBody+(st?'\n\n'+st:''))}`);}
+function advanceQueue(){
+  const pending=contacts.filter(c=>!c.emailSent).sort((a,b)=>a.tier-b.tier||b.totalUnfiled-a.totalUnfiled);
+  const next=pending.find(c=>c.id!==selectedQueueId);selectedQueueId=next?next.id:null;
+  currentMode='orig';refinedBody='';activeBody='';renderQueue();updateGlobals();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SEQUENCE STUDIO
+// ══════════════════════════════════════════════════════════════════
+function getSeqFiltered(){
+  const s=(document.getElementById('seq-search')?.value||'').toLowerCase();
+  const ft=document.getElementById('seq-f-tier')?.value||'all';
+  const fp=document.getElementById('seq-f-tpl')?.value||'all';
+  const fs=document.getElementById('seq-f-status')?.value||'all';
+  return contacts
+    .filter(c=>ft==='all'||String(c.tier)===ft)
+    .filter(c=>fp==='all'||c.templateUsed===fp)
+    .filter(c=>{
+      if(fs==='all')return true;
+      if(fs==='active')return c.emailSent;
+      if(fs==='replied')return c.replied;
+      if(fs==='opened')return c.opened&&!c.replied;
+      if(fs==='pending')return!c.emailSent;
+      return true;
+    })
+    .filter(c=>!s||`${c.firstName} ${c.lastName} ${c.firmName}`.toLowerCase().includes(s))
+    .sort((a,b)=>a.tier-b.tier||b.totalUnfiled-a.totalUnfiled);
+}
+
+function setSeqTab(tab){
+  seqCurrentTab=tab;
+  document.getElementById('seq-tab-active').classList.toggle('active',tab==='active');
+  document.getElementById('seq-tab-contacts').classList.toggle('active',tab==='contacts');
+  document.getElementById('seq-active-view').style.display=tab==='active'?'':'none';
+  document.getElementById('seq-contacts-view').style.display=tab==='contacts'?'':'none';
+  renderSeqStudio();
+}
+
+function renderSeqStudio(){
+  const filtered=getSeqFiltered();
+  const countEl=document.getElementById('seq-filter-count');
+  if(countEl)countEl.textContent=filtered.length+' contacts';
+
+  if(seqCurrentTab==='active'){
+    renderSeqLegend();
+    const active=filtered.filter(c=>c.emailSent);
+    const listEl=document.getElementById('seq-timeline-list');
+    if(!active.length){
+      listEl.innerHTML=`<div style="padding:40px;text-align:center;color:var(--dim);font-size:13px">No active sequences match filters. Send initial emails to start sequences.</div>`;
+      return;
+    }
+    listEl.innerHTML=active.map(c=>renderSeqCard(c)).join('');
+  } else {
+    renderSeqContactsTable(filtered);
+  }
+}
+
+function renderSeqLegend(){
+  const el=document.getElementById('seq-legend');
+  el.innerHTML=SEQ_META.map((s,i)=>`<div class="seq-legend-item"><div class="seq-legend-dot" style="background:${SEQ_STEP_COLORS[i]}"></div>Day ${s.day}: ${s.label}</div>`).join('');
+}
+
+function renderSeqCard(c){
+  const steps=SEQ_META.map((s,i)=>{
+    const done=i<c.sequenceStep,curr=i===c.sequenceStep;
+    const color=SEQ_STEP_COLORS[i];
+    const lineColor=done?'#2EB86A':'rgba(255,255,255,0.08)';
+    const dotBg=done?'rgba(46,184,106,0.15)':curr?`${color}22`:'rgba(255,255,255,0.04)';
+    const dotBorder=done?'#2EB86A':curr?color:'rgba(255,255,255,0.1)';
+    const dotColor=done?'#2EB86A':curr?color:'var(--dim)';
+    return`<div class="seq-step-col">
+      ${i<4?`<div class="seq-step-line${done?' done':''}" style="background:${lineColor}"></div>`:''}
+      <div class="seq-step-dot" style="background:${dotBg};border-color:${dotBorder};color:${dotColor}">${done?'v':i}</div>
+      <div class="seq-step-lbl">${s.label}<br/><span>D${s.day}</span></div>
+    </div>`;
+  }).join('');
+  const tplKey=`T${c.tier}-${c.templateUsed}`;
+  const hasDesign=!!htmlTemplates[tplKey];
+  return`<div class="seq-card">
+    <div class="seq-card-hdr">
+      <div>
+        <div class="seq-card-name">${c.firstName} ${c.lastName} ${c.wPriorSWARM>50?badge('b-swarmp','HOT'):''}</div>
+        <div class="seq-card-sub">${c.firmName} &nbsp;·&nbsp; Step ${c.sequenceStep} of ${SEQ_META.length-1} &nbsp;·&nbsp; ${badge('b-t'+c.tier,'T'+c.tier)} ${badge(TPL[c.templateUsed]?.cls||'b-tplb',c.templateUsed)} ${statusBadge(c)} ${hasDesign?badge('b-teal','HTML design'):''}
+        </div>
+      </div>
+      <div class="seq-card-actions">
+        ${c.paused?'<span style="font-size:11px;color:var(--amber)">Paused</span>':''}
+        <button class="btn" onclick="toggleSeqPause(${c.id})">${c.paused?'Resume':'Pause'}</button>
+        ${c.sequenceStep<SEQ_META.length-1&&!c.replied?`<button class="btn btn-amber" onclick="advanceSeqStep(${c.id})">Advance</button>`:''}
+        <button class="btn btn-violet" onclick="openSeqEditor(${c.id})">Edit sequence</button>
+      </div>
+    </div>
+    <div class="seq-timeline">${steps}</div>
+  </div>`;
+}
+
+function renderSeqContactsTable(filtered){
+  const tb=document.getElementById('seq-contacts-tbody');if(!tb)return;
+  if(!filtered.length){
+    tb.innerHTML='<tr><td colspan="11" style="text-align:center;padding:32px;color:var(--dim);font-size:13px">No contacts match filters.</td></tr>';
+    return;
+  }
+  tb.innerHTML=filtered.map(c=>{
+    const tplKey=`T${c.tier}-${c.templateUsed}`;
+    const hasDes=!!htmlTemplates[tplKey];
+    const desCel=hasDes
+      ?`<span style="color:var(--teal);font-size:11px">Uploaded &nbsp;</span><button class="btn btn-teal" style="font-size:10px;padding:3px 7px" onclick="previewTemplate('${tplKey}')">Preview</button>`
+      :`<button class="btn" style="font-size:10px;padding:3px 7px" onclick="openTemplates()">Upload design</button>`;
+    const sw=c.wPriorSWARM>50
+      ?badge('b-swarmp',`HOT ${c.wPriorSWARM}`)
+      :c.wPriorSWARM>0
+        ?`<span style="font-size:12px;color:var(--muted)">${c.wPriorSWARM}</span>`
+        :`<span style="color:var(--dim);font-size:12px">—</span>`;
+    const liCel=c.emailSent
+      ?(c.linkedinConnected
+        ?`<span class="li-badge li-done">Connected</span>`
+        :`<button class="btn" style="font-size:11px;padding:3px 8px;background:rgba(10,102,194,0.12);color:#5B9BD5;border-color:rgba(10,102,194,0.25)" onclick="promptLinkedIn(${c.id})">Connect</button>`)
+      :`<span style="color:var(--dim);font-size:11px">—</span>`;
+    const uf=c.totalUnfiled>200?'var(--amber)':'var(--muted)';
+    return `<tr>
+      <td style="white-space:nowrap"><div style="font-weight:500;color:var(--text);font-size:13px">${c.firstName} ${c.lastName}</div><div style="font-size:11px;color:var(--dim)">${c.jobTitle}</div></td>
+      <td><div style="font-size:12px;color:var(--muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.firmName}</div></td>
+      <td>${badge('b-t'+c.tier,'T'+c.tier)}</td>
+      <td>${badge(TPL[c.templateUsed]?.cls||'b-tplb',c.templateUsed)}</td>
+      <td style="text-align:right;font-weight:600;color:${uf}">${c.totalUnfiled}</td>
+      <td>${sw}</td>
+      <td>${statusBadge(c)}</td>
+      <td style="font-size:12px;color:var(--muted)">${c.emailSent?`Step ${c.sequenceStep}/4`:'—'}</td>
+      <td>${liCel}</td>
+      <td>${desCel}</td>
+      <td><button class="btn btn-violet" style="font-size:11px;padding:4px 9px" onclick="openSeqEditor(${c.id})">Sequence</button></td>
+    </tr>`;
+  }).join('');
+}
+function toggleSeqPause(id){updateC(id,{paused:!getC(id).paused});renderSeqStudio();}
+function advanceSeqStep(id){const c=getC(id);if(c&&c.sequenceStep<SEQ_META.length-1)updateC(id,{sequenceStep:c.sequenceStep+1});renderSeqStudio();}
+
+// ══════════════════════════════════════════════════════════════════
+// SEQUENCE EDITOR SIDE PANEL
+// ══════════════════════════════════════════════════════════════════
+function openSeqEditor(id){
+  selectedSeqEditorId=id;const c=getC(id);if(!c)return;
+  document.getElementById('editor-contact-name').textContent=`${c.firstName} ${c.lastName}`;
+  document.getElementById('editor-contact-sub').textContent=`${c.firmName} · ${c.workEmail}`;
+  renderSeqEditorBody(id);
+  document.getElementById('seq-editor-overlay').classList.add('open');
+  document.getElementById('seq-editor-panel').classList.add('open');
+}
+function closeSeqEditor(){
+  document.getElementById('seq-editor-overlay').classList.remove('open');
+  document.getElementById('seq-editor-panel').classList.remove('open');
+  renderSeqStudio();
+}
+
+function renderSeqEditorBody(contactId){
+  const c=getC(contactId);if(!c){document.getElementById('seq-editor-body').innerHTML='';return;}
+  const tplKey=`T${c.tier}-${c.templateUsed}`;
+  const hasHtml=!!htmlTemplates[tplKey];
+  let html=`<div style="margin-bottom:14px;padding:10px 12px;background:rgba(255,255,255,0.03);border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    ${badge('b-t'+c.tier,'Tier '+c.tier)} ${badge(TPL[c.templateUsed]?.cls,'Template '+c.templateUsed)}
+    ${hasHtml?badge('b-teal','HTML design active'):`<span style="font-size:11px;color:var(--dim)">No HTML design — plain text</span>`}
+    ${hasHtml?`<button class="btn btn-teal" style="font-size:11px;padding:3px 9px;margin-left:auto" onclick="previewTemplate('${tplKey}')">Preview design</button>`:`<button class="btn btn-violet" style="font-size:11px;padding:3px 9px;margin-left:auto" onclick="openTemplates()">Upload design</button>`}
+  </div>`;
+
+  for(let step=0;step<5;step++){
+    const meta=SEQ_META[step];
+    const email=getSeqEmail(contactId,step);
+    const isSent=c.emailSent&&c.sequenceStep>step;
+    const isCurrent=c.emailSent&&c.sequenceStep===step;
+    const color=SEQ_STEP_COLORS[step];
+    const pillCls=isSent?'done':isCurrent?'curr':'';
+    const cardCls=c.replied&&step===c.sequenceStep?'replied-step':isCurrent?'active-step':'';
+
+    html+=`<div class="seq-email-card ${cardCls}">
+      <div class="seq-email-hdr">
+        <div class="day-pill ${pillCls}">Day ${meta.day}</div>
+        <span style="font-weight:500;font-size:13px;color:var(--text);flex:1">${meta.label}</span>
+        ${isSent?badge('b-sent','Sent'):isCurrent?badge('b-active','Current'):badge('b-pending','Pending')}
+      </div>
+      <div class="seq-email-body">`;
+
+    if(c.replied&&step===c.sequenceStep){
+      html+=`<div class="ai-reply-box">
+        <div style="font-size:11px;font-weight:500;color:var(--teal);margin-bottom:8px">AI reply generator — contact replied to previous email</div>
+        <div class="section-label">Paste ${c.firstName}'s reply</div>
+        <textarea class="inp" id="rptxt-${step}" rows="3" placeholder="Paste their exact reply..." style="margin-bottom:8px;font-size:12px"></textarea>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-violet" onclick="generateAIReply(${contactId},${step})">Generate AI response</button>
+          <span style="font-size:11px;color:var(--dim)" id="ai-gen-status-${step}"></span>
+        </div>
+      </div>`;
+    }
+
+    html+=`<div style="margin-bottom:10px"><div class="section-label">Subject</div><input class="inp" style="width:100%;font-weight:500" value="${esc(email.subject)}" ${isSent?'readonly':''} onchange="saveSeqField(${contactId},${step},'subject',this.value)"/></div>
+      <div style="margin-bottom:10px"><div class="section-label">Body</div><textarea class="inp" rows="8" style="font-family:Menlo,Consolas,monospace;font-size:12px;line-height:1.8" ${isSent?'readonly':''} onchange="saveSeqField(${contactId},${step},'body',this.value)">${esc(email.body)}</textarea></div>`;
+
+    if(userSignature&&userSignature.trim()&&!isSent){
+      html+=`<div style="margin-bottom:10px"><div class="section-label">Signature preview</div><div style="background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12px;color:var(--muted);line-height:1.7">${userSignature}</div></div>`;
+    }
+
+    if(!isSent){
+      html+=`<div style="display:flex;gap:7px;flex-wrap:wrap">
+        <button class="btn" onclick="resetSeqStep(${contactId},${step})">Reset</button>
+        <div style="flex:1"></div>
+        <button class="btn" onclick="copySeqEmail(${contactId},${step})">Copy</button>
+        <button class="btn" onclick="openSeqOutlook(${contactId},${step})">Outlook</button>
+        <button class="btn btn-solid" onclick="sendSeqStep(${contactId},${step})">Send</button>
+      </div>`;
+    }else{
+      html+=`<div style="font-size:11px;color:var(--dim)">Sent — read only</div>`;
+    }
+
+    html+=`</div></div>`;
+  }
+  document.getElementById('seq-editor-body').innerHTML=html;
+}
+
+async function generateAIReply(contactId,step){
+  const c=getC(contactId);if(!c)return;
+  const replyEl=document.getElementById(`rptxt-${step}`);
+  const replyText=replyEl?replyEl.value.trim():'';
+  if(!replyText){toast("Paste the contact's reply first",'amber');return;}
+  const email=getSeqEmail(contactId,step);
+  const prevEmail=getSeqEmail(contactId,step>0?step-1:0);
+  const statusEl=document.getElementById(`ai-gen-status-${step}`);
+  if(statusEl)statusEl.innerHTML=`<span class="spin" style="color:var(--amber)">&#8635;</span> Generating...`;
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      model:'claude-sonnet-4-20250514',max_tokens:600,
+      system:`You are helping Pawel (Special Rigger, CAN USA) reply to ${c.firstName} ${c.lastName} at ${c.firmName}. CAN USA provides SPRAT rope access for NYC FISP at 30–50% lower cost, 2–3 days/building. ${c.firmName} has ${c.totalUnfiled} unfiled, ${c.sub10A} in 10A (deadline 2/21/2027). Write a warm, concise reply (under 150 words) that: (1) addresses every question or concern raised; (2) overcomes objections with facts; (3) aggressively moves toward a meeting — if there's any openness, propose a specific time slot; (4) no em dashes as connectors; (5) no AI phrases; (6) no sign-off. Return only the email body.`,
+      messages:[{role:'user',content:`Pawel's previous email:\n${prevEmail.body}\n\n---\n${c.firstName}'s reply:\n${replyText}\n\nWrite Pawel's reply.`}]
+    })});
+    const data=await res.json();if(data.error)throw new Error(data.error.message);
+    saveSeqField(contactId,step,'body',data.content[0].text);
+    renderSeqEditorBody(contactId);
+    toast('AI response generated','green');
+  }catch(e){if(statusEl)statusEl.textContent='Error: '+e.message;}
+}
+
+function resetSeqStep(contactId,step){
+  const c=getC(contactId);if(!c)return;
+  if(!seqEmails[contactId])seqEmails[contactId]={};
+  seqEmails[contactId][step]=defaultSeqEmail(step,c);save();renderSeqEditorBody(contactId);toast('Reset','amber');
+}
+
+function copySeqEmail(contactId,step){
+  const email=getSeqEmail(contactId,step);const st=sigText();
+  navigator.clipboard.writeText(`Subject: ${email.subject}\n\n${email.body}${st?'\n\n'+st:''}`).then(()=>toast('Copied','blue')).catch(()=>toast('Copy failed','amber'));
+}
+function openSeqOutlook(contactId,step){
+  const c=getC(contactId);if(!c)return;const email=getSeqEmail(contactId,step);const st=sigText();
+  window.open(`mailto:${c.workEmail}?subject=${encodeURIComponent(email.subject)}&body=${encodeURIComponent(email.body+(st?'\n\n'+st:''))}`);
+}
+async function sendSeqStep(contactId,step){
+  const c=getC(contactId);if(!c)return;const email=getSeqEmail(contactId,step);
+  const st=sigText();const full=email.body+(st?'\n\n'+st:'');
+  if(msConnected&&msAccount){
+    try{
+      const tpl=getHtmlTemplate(c.tier,c.templateUsed);
+      const htmlContent=tpl?applyHtmlTemplate(tpl.html,c,email.body,email.subject):null;
+      await sendViaGraph(c.workEmail,email.subject,full,htmlContent);
+      updateC(contactId,{emailSent:true,sequenceStep:step+1});
+      toast('Sent via Outlook','green');
+    }catch(e){toast('Send failed: '+e.message,'amber');return;}
+  }else{
+    updateC(contactId,{emailSent:true,sequenceStep:step+1});
+    toast('Marked sent. Connect Outlook to send directly.','amber');
+  }
+  renderSeqEditorBody(contactId);renderSeqStudio();
+  const sc=getC(contactId);
+  if(sc&&!sc.linkedinConnected)promptLinkedIn(contactId);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// HTML TEMPLATES MANAGER
+// ══════════════════════════════════════════════════════════════════
+function openTemplates(){
+  renderTemplatesPanel();
+  document.getElementById('tpl-overlay').classList.add('open');
+  document.getElementById('tpl-panel').classList.add('open');
+}
+function closeTemplates(){
+  document.getElementById('tpl-overlay').classList.remove('open');
+  document.getElementById('tpl-panel').classList.remove('open');
+  save();renderSeqStudio();
+}
+
+function renderTemplatesPanel(){
+  const body=document.getElementById('tpl-panel-body');
+  body.innerHTML=`
+    <div class="info-box" style="margin-bottom:16px">
+      <strong style="display:block;margin-bottom:5px;color:var(--text)">How to use</strong>
+      1. Design your email template as an HTML file in Claude Artifacts or any HTML editor.<br/>
+      2. Include <code>{{emailBody}}</code> where the email text content goes, and <code>{{firstName}}</code>, <code>{{firmName}}</code> etc. for dynamic data.<br/>
+      3. Upload or paste the HTML into the matching Tier &times; Template slot below.<br/>
+      4. When an email is sent to a contact with that tier and template combo, your design wraps the content automatically.<br/><br/>
+      <strong>All placeholders:</strong> <code>{{firstName}} {{lastName}} {{firmName}} {{emailBody}} {{subject}} {{totalUnfiled}} {{sub10A}} {{wPriorSWARM}} {{deadline10A}} {{senderName}} {{senderTitle}} {{senderEmail}} {{signature}}</code>
+    </div>
+    <div class="tpl-slots-grid" id="tpl-slots-grid"></div>
+    <div id="tpl-preview-area" style="margin-top:16px"></div>`;
+  
+  const grid=document.getElementById('tpl-slots-grid');
+  grid.innerHTML=[1,2,3].flatMap(t=>['A','B','C'].map(p=>{
+    const key=`T${t}-${p}`;const tpl=htmlTemplates[key];
+    const tplCls=TPL[p]?.cls||'b-tplb';
+    return`<div class="tpl-slot${tpl?' has-template':''}" id="slot-${key}">
+      <div class="tpl-slot-hdr">
+        ${badge('b-t'+t,'Tier '+t)} ${badge(tplCls,'Tpl '+p)}
+        ${tpl?badge('b-teal','Active'):''}
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${TPL[p]?.desc||''}</div>
+      ${tpl?`<div style="font-size:11px;color:var(--dim);margin-bottom:8px">Uploaded ${new Date(tpl.uploadedAt).toLocaleDateString([],{month:'short',day:'numeric'})}</div>`:''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <label class="btn btn-green" style="cursor:pointer;font-size:11px;padding:4px 9px">
+          ${tpl?'Replace':'Upload HTML'}
+          <input type="file" accept=".html,text/html" style="display:none" onchange="uploadTemplate('${key}',this)"/>
+        </label>
+        <button class="btn btn-violet" style="font-size:11px;padding:4px 9px" onclick="pasteTemplate('${key}')">Paste HTML</button>
+        ${tpl?`<button class="btn btn-teal" style="font-size:11px;padding:4px 9px" onclick="previewTemplate('${key}')">Preview</button>`:''}
+        ${tpl?`<button class="btn" style="font-size:11px;padding:4px 9px;color:var(--red);border-color:rgba(192,80,80,0.25)" onclick="clearTemplate('${key}')">Clear</button>`:''}
+      </div>
+    </div>`;
+  })).join('');
+}
+
+function uploadTemplate(key,input){
+  const file=input.files[0];if(!file)return;
+  if(file.size>500000){alert('File too large (max 500KB). Inline your CSS to reduce size.');return;}
+  const r=new FileReader();
+  r.onload=ev=>{
+    htmlTemplates[key]={html:ev.target.result,uploadedAt:new Date().toISOString()};
+    save();renderTemplatesPanel();toast(`Template uploaded for ${key}`,'green');
+  };r.readAsText(file);
+}
+
+function pasteTemplate(key){
+  const modal=document.getElementById('tpl-preview-area');
+  modal.innerHTML=`<div class="card" style="padding:16px">
+    <div style="font-weight:500;color:var(--text);margin-bottom:10px;font-size:13px">Paste HTML for ${key}</div>
+    <textarea class="inp" id="paste-html-area" rows="10" placeholder="Paste your full HTML email template here..." style="font-family:Menlo,Consolas,monospace;font-size:11px;line-height:1.6;margin-bottom:10px">${htmlTemplates[key]?.html||''}</textarea>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-solid" onclick="savePastedTemplate('${key}')">Save template</button>
+      <button class="btn" onclick="document.getElementById('tpl-preview-area').innerHTML=''">Cancel</button>
+    </div>
+  </div>`;
+  modal.scrollIntoView({behavior:'smooth'});
+}
+
+function savePastedTemplate(key){
+  const html=document.getElementById('paste-html-area')?.value||'';
+  if(!html.trim()){toast('No HTML to save','amber');return;}
+  htmlTemplates[key]={html,uploadedAt:new Date().toISOString()};
+  save();renderTemplatesPanel();toast(`Template saved for ${key}`,'green');
+}
+
+function clearTemplate(key){
+  if(!confirm(`Remove HTML template for ${key}? Emails will fall back to plain text.`))return;
+  delete htmlTemplates[key];save();renderTemplatesPanel();toast('Template removed','amber');
+}
+
+function previewTemplate(key){
+  const tpl=htmlTemplates[key];if(!tpl){toast('No template to preview','amber');return;}
+  const sampleContact={firstName:'Richard',lastName:'Koenigsberg',firmName:'Koenigsberg Engineering',totalUnfiled:397,sub10A:153,sub10B:124,wPriorSWARM:89};
+  const sampleBody='Hi Richard,\n\nPublic DOB data shows Koenigsberg Engineering has 397 Cycle 10 buildings still to file, 153 in sub-cycle 10A (deadline: 2/21/2027). Rope access at 2–3 days per building is the fastest path to clear this backlog.\n\nDo you have time over the next week or two?';
+  const html=applyHtmlTemplate(tpl.html,sampleContact,sampleBody,'Koenigsberg Engineering + 397 buildings + CAN USA');
+  const w=window.open('','_blank','width=700,height=600');
+  w.document.write(html);w.document.close();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// MSAL / OUTLOOK
+// ══════════════════════════════════════════════════════════════════
+function saveClientId(){azureClientId=document.getElementById('azure-client-id').value.trim();save();toast('Client ID saved','green');}
+function getMsalConfig(){return{auth:{clientId:azureClientId,authority:'https://login.microsoftonline.com/common',redirectUri:window.location.href.split('?')[0].split('#')[0]},cache:{cacheLocation:'localStorage',storeAuthStateInCookie:true}};}
+async function connectMS(){
+  if(!azureClientId){alert('Paste your Azure App Client ID in Settings first.');return;}
+  try{
+    if(!msalInstance){msalInstance=new msal.PublicClientApplication(getMsalConfig());await msalInstance.initialize();}
+    const result=await msalInstance.loginPopup({scopes:['Mail.Send','Mail.ReadWrite','User.Read']});
+    msAccount=result.account;msConnected=true;
+    document.getElementById('ms-status').innerHTML=`<span class="badge b-sent">Signed in</span> <button class="btn" style="font-size:11px;padding:3px 8px;margin-left:6px" onclick="signOutMS()">Sign out</button>`;
+    document.getElementById('ms-user-info').style.display='block';
+    document.getElementById('ms-user-info').innerHTML=`<div style="padding:8px 10px;background:var(--green-bg);border-radius:6px;font-size:11px;color:var(--green);border:1px solid rgba(46,184,106,0.2)">Sending as: <strong>${msAccount.username}</strong></div>`;
+    document.getElementById('ms-setup-block').style.display='none';
+    renderTracking();save();toast('Signed in to Microsoft','green');
+  }catch(err){if(err.errorCode!=='user_cancelled')alert('Sign-in failed: '+err.message);}
+}
+function signOutMS(){
+  msConnected=false;msAccount=null;
+  document.getElementById('ms-status').innerHTML=`<button class="btn btn-amber" onclick="connectMS()">Sign in with Microsoft</button>`;
+  document.getElementById('ms-user-info').style.display='none';document.getElementById('ms-setup-block').style.display='block';renderTracking();
+}
+async function sendViaGraph(to,subject,plainBody,htmlBody){
+  if(!msalInstance||!msAccount)throw new Error('Not signed in');
+  const token=await msalInstance.acquireTokenSilent({scopes:['Mail.Send'],account:msAccount});
+  const contentType=htmlBody?'HTML':'Text';
+  const content=htmlBody||plainBody;
+  const payload={message:{subject,body:{contentType,content},toRecipients:[{emailAddress:{address:to}}]},saveToSentItems:true};
+  const res=await fetch('https://graph.microsoft.com/v1.0/me/sendMail',{method:'POST',headers:{'Authorization':'Bearer '+token.accessToken,'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(!res.ok){const e=await res.json();throw new Error(e.error?.message||'Graph API error');}
+}
+
+// ══════════════════════════════════════════════════════════════════
+// BULK + DASHBOARD + SETTINGS
+// ══════════════════════════════════════════════════════════════════
+function updateBulkCount(){
+  const tp=document.getElementById('bulk-tpl')?.value||'',ti=document.getElementById('bulk-tier')?.value||'';
+  const n=contacts.filter(c=>!c.emailSent&&(!tp||c.templateUsed===tp)&&(!ti||String(c.tier)===ti)).length;
+  const el=document.getElementById('bulk-match-count');if(el)el.textContent=n;
+  const btn=document.getElementById('bulk-approve-btn');if(btn){btn.textContent='Approve all ('+n+')';btn.disabled=n===0;}
+}
+function doBulkApprove(){
+  const tp=document.getElementById('bulk-tpl')?.value||'',ti=document.getElementById('bulk-tier')?.value||'';
+  contacts=contacts.map(c=>(!c.emailSent&&(!tp||c.templateUsed===tp)&&(!ti||String(c.tier)===ti))?{...c,approved:true}:c);
+  save();updateBulkCount();updateGlobals();toast(contacts.filter(c=>c.approved&&!c.emailSent).length+' approved','green');
+}
+
+function renderDashboard(){
+  const sent=contacts.filter(c=>c.emailSent);
+  const op=sent.filter(c=>c.opened).length,rp=sent.filter(c=>c.replied).length,bo=sent.filter(c=>c.bounced).length;
+  document.getElementById('dash-top').innerHTML=[
+    {l:'Emails sent',v:sent.length,c:'var(--text)'},{l:'Open rate',v:(sent.length?Math.round(op/sent.length*100):0)+'%',c:'var(--blue)',s:'vs 6% avg'},
+    {l:'Reply rate',v:(sent.length?Math.round(rp/sent.length*100):0)+'%',c:'var(--teal)',s:'vs 0.9% avg'},{l:'Bounces',v:bo,c:bo>0?'var(--red)':'var(--dim)'},
+    {l:'LinkedIn pending',v:getLinkedInPending(),c:getLinkedInPending()>0?'var(--amber)':'var(--dim)',s:'connections to send'},
+  ].map(s=>`<div class="stat-card"><div style="font-size:10px;color:var(--dim);margin-bottom:5px">${s.l}</div><div style="font-size:24px;font-weight:600;color:${s.c}">${s.v}</div>${s.s?`<div style="font-size:10px;color:var(--dim);margin-top:2px">${s.s}</div>`:''}</div>`).join('');
+  document.getElementById('tier-tbody').innerHTML=[1,2,3].map(t=>{
+    const tc=contacts.filter(c=>c.tier===t),ts=tc.filter(c=>c.emailSent),tt=ts.length||1;
+    const o=ts.filter(c=>c.opened).length,r=ts.filter(c=>c.replied).length;
+    return`<tr><td>${badge('b-t'+t,'Tier '+t)}</td><td style="color:var(--muted)">${tc.length}</td><td>${ts.length}</td><td>${o}</td><td style="color:var(--blue);font-weight:500">${Math.round(o/tt*100)}%</td><td>${r}</td><td style="color:var(--teal);font-weight:500">${Math.round(r/tt*100)}%</td></tr>`;
+  }).join('');
+  const firms={};
+  contacts.forEach(c=>{if(!firms[c.firmName])firms[c.firmName]={n:0,s:0,o:0,r:0,firm:c.firmName};firms[c.firmName].n++;if(c.emailSent)firms[c.firmName].s++;if(c.opened)firms[c.firmName].o++;if(c.replied)firms[c.firmName].r++;});
+  document.getElementById('firm-tbody').innerHTML=Object.values(firms).sort((a,b)=>b.n-a.n).map(f=>`<tr><td style="font-weight:500;color:var(--text);font-size:12px">${f.firm}</td><td style="color:var(--muted)">${f.n}</td><td>${f.s}</td><td style="color:${f.o>0?'var(--blue)':'var(--dim)'}">${f.o}</td><td style="color:${f.r>0?'var(--teal)':'var(--dim)'}">${f.r}</td></tr>`).join('');
+}
+function exportCSV(){
+  const rows=contacts.map(c=>[c.firstName,c.lastName,c.firmName,c.tier,c.totalUnfiled,c.workEmail,c.emailSent?'Yes':'No',c.opened?'Yes':'No',c.replied?'Yes':'No'].join(','));
+  const a=document.createElement('a');a.href='data:text/csv,'+encodeURIComponent('First,Last,Firm,Tier,Unfiled,Email,Sent,Opened,Replied\n'+rows.join('\n'));a.download='canusa_campaign.csv';a.click();
+}
+// ── RICH TEXT SIGNATURE EDITOR ──────────────────────────────────
+function updateSignature(){
+  const el=document.getElementById('sig-editor');
+  if(el)userSignature=el.innerHTML;
+  save();
+}
+function sigExec(cmd,val){
+  document.getElementById('sig-editor').focus();
+  document.execCommand(cmd,false,val||null);
+  updateSignature();
+}
+function sigExecSize(val){
+  // execCommand fontSize uses 1–7 scale; wrap selected text in a span with px size after
+  const sizes={1:'10px',2:'11px',3:'12px',4:'14px',5:'16px',6:'18px'};
+  document.getElementById('sig-editor').focus();
+  document.execCommand('fontSize',false,val);
+  // Override the font element size with actual px via span
+  const fonts=document.getElementById('sig-editor').querySelectorAll('font[size]');
+  fonts.forEach(f=>{
+    const span=document.createElement('span');
+    span.style.fontSize=sizes[f.getAttribute('size')]||'13px';
+    span.innerHTML=f.innerHTML;
+    f.replaceWith(span);
+  });
+  updateSignature();
+}
+function sigInsertImage(input){
+  const file=input.files[0];if(!file)return;
+  if(file.size>300000){alert('Image too large — max 300KB. Try a smaller PNG or JPG.');return;}
+  const r=new FileReader();
+  r.onload=ev=>{
+    const editor=document.getElementById('sig-editor');editor.focus();
+    const img=`<img src="${ev.target.result}" style="max-width:160px;height:auto;display:inline-block;vertical-align:middle;margin:4px 6px 4px 0" alt="logo"/>`;
+    document.execCommand('insertHTML',false,img);
+    updateSignature();
+  };r.readAsDataURL(file);
+  input.value='';
+}
+function sigClear(){
+  if(!confirm('Clear signature?'))return;
+  const el=document.getElementById('sig-editor');if(el)el.innerHTML='';
+  userSignature='';save();
+}
+// Returns plain text version of signature (for clipboard / mailto)
+function sigText(){
+  return(userSignature||'')
+    .replace(/<br\s*\/?>/gi,'\n')
+    .replace(/<img[^>]*>/gi,'[image]')
+    .replace(/<[^>]+>/g,'')
+    .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+    .replace(/&nbsp;/g,' ').replace(/\n{3,}/g,'\n\n').trim();
+}
+function renderTracking(){
+  const rows=[{l:'Open tracking (1x1 pixel)',d:'Embedded in every email',on:true},{l:'Link click tracking',d:'Redirect URLs on all links',on:true},{l:'Reply detection (Graph API)',d:'Inbox polling every 15 min',on:msConnected},{l:'Bounce detection',d:'Graph API delivery reports',on:msConnected}];
+  document.getElementById('tracking-card').innerHTML=`<div style="font-weight:500;color:var(--text);font-size:13px;margin-bottom:10px">Tracking</div>`+rows.map(t=>`<div class="track-row"><div class="track-dot${t.on?' on':''}">${t.on?'<div class="track-inner"></div>':''}</div><div><div style="font-size:12px;color:${t.on?'var(--text)':'var(--muted)'}">${t.l}</div><div style="font-size:10px;color:var(--dim);margin-top:1px">${t.d}</div></div></div>`).join('');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// LINKEDIN MODAL
+// ══════════════════════════════════════════════════════════════════
+let _liContactId=null;
+
+function promptLinkedIn(contactId){
+  const c=getC(contactId);if(!c)return;
+  if(c.linkedinConnected)return; // already done
+  _liContactId=contactId;
+  const hasUrl=!!(c.linkedinUrl&&c.linkedinUrl.trim());
+  document.getElementById('li-modal-title').textContent=
+    `Email sent to ${c.firstName} ${c.lastName} — send a LinkedIn connection?`;
+  document.getElementById('li-modal-body').innerHTML=
+    `Connecting on LinkedIn alongside your email boosts reply rates by 2–3x. `+
+    (hasUrl
+      ?`Click below to open ${c.firstName}'s profile — then hit Connect.`
+      :`<span style="color:var(--amber)">No LinkedIn URL saved for this contact. Add it in their record, or search manually.</span>`);
+  // Update the Open LinkedIn button
+  const openBtn=document.getElementById('li-modal-backdrop').querySelector('.btn-solid');
+  if(hasUrl){
+    openBtn.style.display='inline-flex';
+    openBtn.onclick=openLinkedIn;
+  }else{
+    openBtn.style.display='none';
+  }
+  document.getElementById('li-modal-backdrop').classList.add('open');
+}
+
+function openLinkedIn(){
+  const c=getC(_liContactId);if(!c)return;
+  const url=c.linkedinUrl&&c.linkedinUrl.trim()
+    ? c.linkedinUrl
+    : `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(c.firstName+' '+c.lastName+' '+c.firmName)}`;
+  window.open(url,'_blank');
+  // Mark as connected after opening — assume Pawel will connect
+  setTimeout(()=>{
+    markLinkedInDone();
+  },2000);
+}
+
+function markLinkedInDone(){
+  if(_liContactId){
+    updateC(_liContactId,{linkedinConnected:true});
+    toast(`LinkedIn connection sent to ${getC(_liContactId)?.firstName||'contact'}`,'green');
+  }
+  _liContactId=null;
+  document.getElementById('li-modal-backdrop').classList.remove('open');
+  renderContacts();
+}
+
+function skipLinkedIn(){
+  _liContactId=null;
+  document.getElementById('li-modal-backdrop').classList.remove('open');
+}
+
+// Show pending LinkedIn connections count in dashboard
+function getLinkedInPending(){
+  return contacts.filter(c=>c.emailSent&&!c.linkedinConnected).length;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════════════
+load();
+showView('dashboard');
+renderTracking();
+updateGlobals();
+</script>
+</body>
+</html>

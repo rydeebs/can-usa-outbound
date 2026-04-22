@@ -1,0 +1,42 @@
+# Environment — NEVER commit this
+.env
+*.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Data files — contain personal contact info, keep local
+data/contacts.json
+data/seq_emails.json
+data/reply_log.json
+data/*.json
+
+# Logs
+agent.log
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Lock file (runtime only)
+data/.contacts.lock
