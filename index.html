@@ -758,51 +758,135 @@ function renderContacts(){
 }
 function openReview(id){selectedQueueId=id;showView('queue');}
 
+// ── Proper full-file CSV parser (handles multiline quoted fields) ──────────
+function parseFullCSV(text){
+  // Parses the ENTIRE file character-by-character so multiline quoted fields
+  // (like email bodies with \n inside) are handled correctly.
+  const rows=[];
+  let row=[],cur='',inQ=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i],nx=text[i+1];
+    if(inQ){
+      if(ch==='"'&&nx==='"'){cur+='"';i++;}          // escaped quote ""
+      else if(ch==='"'){inQ=false;}                    // closing quote
+      else{cur+=ch;}                                   // normal char inside quotes
+    }else{
+      if(ch==='"'){inQ=true;}                          // opening quote
+      else if(ch===','){row.push(cur);cur='';}         // field separator
+      else if(ch==='\r'&&nx==='\n'){row.push(cur);rows.push(row);row=[];cur='';i++;} // CRLF
+      else if(ch==='\n'||ch==='\r'){row.push(cur);rows.push(row);row=[];cur='';}    // LF or CR
+      else{cur+=ch;}
+    }
+  }
+  if(cur||row.length){row.push(cur);rows.push(row);}  // last row
+  return rows;
+}
+
 function importCSV(e){
   const file=e.target.files[0];if(!file)return;
   const r=new FileReader();
   r.onload=ev=>{
     try{
-      const lines=ev.target.result.trim().split('\n');
-      const heads=lines[0].split(',').map(h=>h.trim().replace(/"/g,''));
-      const parsed=lines.slice(1).map((line,idx)=>{
-        const vals=[];let cur='',inQ=false;
-        for(const ch of line){if(ch==='"')inQ=!inQ;else if(ch===','&&!inQ){vals.push(cur.trim());cur='';}else cur+=ch;}
-        vals.push(cur.trim());const obj={};heads.forEach((h,i)=>{obj[h]=vals[i]||'';});
-        // Support both 'Full Name' (single col) and 'First Name'+'Last Name' (split cols)
-        const fullName=obj['Full Name']||'';
-        const firstName=obj['First Name']||(fullName.includes(' ')?fullName.split(' ').slice(0,-1).join(' '):fullName)||'';
-        const lastName=obj['Last Name']||(fullName.includes(' ')?fullName.split(' ').slice(-1)[0]:'');
-        return{
-          id:Date.now()+idx,
-          firstName,lastName,
-          fullName:fullName||(firstName+' '+lastName).trim(),
-          jobTitle:obj['Job Title']||obj['Title']||'',
-          workEmail:obj['Work Email']||obj['Email']||'',
-          location:obj['Location']||obj['City']||'',
-          firmName:obj['Firm Name']||obj['Company Name']||obj['Company']||'',
-          tier:parseInt(obj['Tier'])||3,
-          totalUnfiled:parseInt(obj['Total Unfiled'])||0,
-          sub10A:parseInt(obj['Sub_10A'])||parseInt(obj['Sub 10A'])||0,
-          sub10B:parseInt(obj['Sub_10B'])||parseInt(obj['Sub 10B'])||0,
-          sub10C:parseInt(obj['Sub_10C'])||parseInt(obj['Sub 10C'])||0,
-          wPriorSWARM:parseInt(obj['W/ Prior SWARMP'])||parseInt(obj['Prior SWARMP'])||0,
-          pitchAnchor:obj['Pitch Anchor']||'',
-          notes:obj['Notes']||'',
-          templateUsed:obj['Template Used']||obj['Template']||'B',
-          subjectLine:obj['Subject Line']||'',
-          emailBody:cleanEmDashes(obj['Email Body']||''),
-          linkedinSummary:obj['Summarize LinkedIn profile']||obj['LinkedIn Summary']||'',
-          linkedinUrl:obj['LinkedIn Profile']||obj['LinkedIn URL']||obj['LinkedIn']||'',
+      const rows=parseFullCSV(ev.target.result);
+      if(rows.length<2){toast('CSV appears empty','amber');return;}
+
+      // Build header map (trim whitespace and BOM from headers)
+      const rawHeads=rows[0].map(h=>h.trim().replace(/^\uFEFF/,''));
+      const heads={};rawHeads.forEach((h,i)=>{heads[h]=i;});
+
+      // Helper: get value by column name with fallbacks
+      const col=(row,...keys)=>{
+        for(const k of keys){
+          if(heads[k]!==undefined&&row[heads[k]]!==undefined){
+            const v=row[heads[k]].trim();if(v)return v;
+          }
+        }
+        return'';
+      };
+
+      const emailRe=/^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+      const parsed=[];
+      const seenEmails=new Set();
+
+      rows.slice(1).forEach((row,idx)=>{
+        // Skip rows that are too short or clearly malformed
+        if(row.length<3)return;
+
+        // Work Email must look like an email address
+        const workEmail=col(row,'Work Email','Email','E-mail');
+        if(!workEmail||!emailRe.test(workEmail))return;
+
+        // Dedup within this import batch by email
+        const emailKey=workEmail.toLowerCase();
+        if(seenEmails.has(emailKey))return;
+        seenEmails.add(emailKey);
+
+        // Name: prefer 'Full Name' (plain) over 'Full Name Title' (has RA/AIA suffixes)
+        // Clay exports both — 'Full Name' is the clean version
+        const fullName=col(row,'Full Name')||col(row,'Full Name Title')||'';
+        const fnParts=fullName.trim().split(/\s+/);
+        const firstName=col(row,'First Name')||(fnParts.length>1?fnParts.slice(0,-1).join(' '):fnParts[0])||'';
+        const lastName=col(row,'Last Name')||(fnParts.length>1?fnParts[fnParts.length-1]:'')||'';
+
+        // Firm Name — must be a real firm name (not email body content)
+        // A valid firm name: <= 100 chars, no sentence-ending punctuation mid-string
+        const rawFirm=col(row,'Firm Name','Company Name','Company');
+        const firmName=(rawFirm.length<=120&&!/[.!?].*[a-z]{5}/.test(rawFirm))?rawFirm:'';
+
+        // Template: ensure it's A, B, or C
+        const tplRaw=(col(row,'Template Used','Template')||'B').toUpperCase().trim();
+        const templateUsed=['A','B','C'].includes(tplRaw)?tplRaw:'B';
+
+        parsed.push({
+          id:Date.now()+idx+(Math.random()*1000|0),
+          firstName:firstName.trim(),
+          lastName:lastName.trim(),
+          fullName:fullName.trim()||(firstName+' '+lastName).trim(),
+          jobTitle:col(row,'Job Title','Title'),
+          workEmail,
+          location:col(row,'Location','City','State'),
+          firmName,
+          tier:Math.min(3,Math.max(1,parseInt(col(row,'Tier'))||3)),
+          totalUnfiled:parseInt(col(row,'Total Unfiled','Unfiled'))||0,
+          sub10A:parseInt(col(row,'Sub_10A','Sub 10A'))||0,
+          sub10B:parseInt(col(row,'Sub_10B','Sub 10B'))||0,
+          sub10C:parseInt(col(row,'Sub_10C','Sub 10C'))||0,
+          wPriorSWARM:parseInt(col(row,'W/ Prior SWARMP','Prior SWARMP','SWARMP'))||0,
+          pitchAnchor:col(row,'Pitch Anchor'),
+          notes:col(row,'Notes'),
+          templateUsed,
+          subjectLine:col(row,'Subject Line','Subject'),
+          emailBody:cleanEmDashes(col(row,'Email Body','Body')),
+          linkedinSummary:col(row,'Summarize LinkedIn profile','LinkedIn Summary'),
+          linkedinUrl:col(row,'LinkedIn Profile','LinkedIn URL','LinkedIn'),
           linkedinConnected:false,
           emailSent:false,opened:false,replied:false,bounced:false,
           sequenceStep:0,approved:false,paused:false,refined:false
-        };
+        });
       });
-      contacts=[...contacts,...parsed];save();renderContacts();
-      toast(parsed.length+' contacts imported','green');
-    }catch(err){alert('CSV error: '+err.message);}
-  };r.readAsText(file);
+
+      if(!parsed.length){toast('No valid contacts found — check CSV columns','amber');return;}
+
+      const existing=contacts.length;
+      const msg=existing>0
+        ?'Replace your '+existing+' existing contacts with '+parsed.length+' from this CSV?\n\nThis cannot be undone — export a backup first if needed.'
+        :'Import '+parsed.length+' contacts from this CSV?';
+      if(!confirm(msg))return;
+
+      contacts=parsed; // REPLACE, not append
+      seqEmails={};    // clear sequence state for clean import
+      save();
+      renderContacts();
+      renderDashboard();
+      updateGlobals();
+      toast(parsed.length+' contacts imported ('+( rows.length-1-parsed.length)+' skipped — no valid email)','green');
+
+    }catch(err){
+      console.error('CSV import error:',err);
+      alert('CSV error: '+err.message+'\n\nCheck the browser console for details.');
+    }
+  };
+  r.readAsText(file,'UTF-8');
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1524,7 +1608,8 @@ function renderDashboard(){
     return`<tr><td>${badge('b-t'+t,'Tier '+t)}</td><td style="color:var(--muted)">${tc.length}</td><td>${ts.length}</td><td>${o}</td><td style="color:var(--blue);font-weight:500">${Math.round(o/tt*100)}%</td><td>${r}</td><td style="color:var(--teal);font-weight:500">${Math.round(r/tt*100)}%</td></tr>`;
   }).join('');
   const firms={};
-  contacts.forEach(c=>{if(!firms[c.firmName])firms[c.firmName]={n:0,s:0,o:0,r:0,firm:c.firmName,tier:c.tier};firms[c.firmName].n++;if(c.tier<firms[c.firmName].tier)firms[c.firmName].tier=c.tier;if(c.emailSent)firms[c.firmName].s++;if(c.opened)firms[c.firmName].o++;if(c.replied)firms[c.firmName].r++;});
+  contacts.forEach(c=>{const fn=(c.firmName||'').trim();if(!fn)return; // skip blank firm names
+  if(!firms[fn])firms[fn]={n:0,s:0,o:0,r:0,firm:fn,tier:c.tier};firms[fn].n++;if(c.tier<firms[fn].tier)firms[fn].tier=c.tier;if(c.emailSent)firms[fn].s++;if(c.opened)firms[fn].o++;if(c.replied)firms[fn].r++;});
   document.getElementById('firm-tbody').innerHTML=Object.values(firms).sort((a,b)=>b.n-a.n).map(f=>{
     const tierCls='b-t'+f.tier;
     return `<tr>
