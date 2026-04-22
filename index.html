@@ -258,7 +258,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     </div>
     <div class="card" style="overflow:hidden">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:11px;font-weight:500;color:var(--muted)">Firm rollup</div>
-      <table><thead><tr><th>Firm</th><th>Contacts</th><th>Sent</th><th>Opens</th><th>Replies</th></tr></thead><tbody id="firm-tbody"></tbody></table>
+      <table><thead><tr><th>Tier</th><th>Firm</th><th>Contacts</th><th>Sent</th><th>Opens</th><th>Replies</th></tr></thead><tbody id="firm-tbody"></tbody></table>
     </div>
   </div>
 </div>
@@ -288,10 +288,30 @@ tr:hover td{background:rgba(255,255,255,0.02)}
 
 <!-- ═══ REVIEW QUEUE ═══ -->
 <div id="view-queue" class="view">
-  <div class="topbar"><span class="topbar-title" style="flex:1">Review queue</span><span id="bulk-refine-status" style="font-size:12px;color:var(--muted)"></span><button id="btn-bulk-refine" class="btn btn-violet" onclick="doBulkRefine()">Refine all with Claude</button></div>
-  <div class="queue-wrap">
+  <div class="topbar">
+    <span class="topbar-title" style="flex:1">Review queue</span>
+    <span id="bulk-refine-status" style="font-size:12px;color:var(--muted)"></span>
+    <button id="btn-bulk-refine" class="btn btn-violet" onclick="doBulkRefine()">Refine all with Claude</button>
+  </div>
+  <!-- Sub-tabs -->
+  <div style="display:flex;border-bottom:1px solid var(--border);background:var(--sidebar);flex-shrink:0;align-items:center">
+    <button id="qtab-bulk" onclick="setQueueTab('bulk')" style="padding:10px 18px;font-size:13px;font-weight:500;background:transparent;border:none;border-bottom:2px solid var(--amber);color:var(--amber);cursor:pointer;font-family:inherit">Bulk approve</button>
+    <button id="qtab-individual" onclick="setQueueTab('individual')" style="padding:10px 18px;font-size:13px;font-weight:500;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-family:inherit">Individual review</button>
+    <div style="flex:1;display:flex;align-items:center;justify-content:flex-end;padding-right:16px;gap:10px">
+      <span style="font-size:12px;color:var(--dim)">Pending: <span id="q-pending-count" style="color:var(--amber);font-weight:600">0</span></span>
+    </div>
+  </div>
+  <!-- BULK VIEW -->
+  <div id="queue-bulk-view" class="scroll" style="padding:16px">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6;max-width:700px">
+      Contacts are grouped by Tier and Template. Review one sample email per group to confirm the template looks right, then approve the entire group in one click. Individual overrides are available in the Individual review tab.
+    </div>
+    <div id="queue-groups"></div>
+  </div>
+  <!-- INDIVIDUAL VIEW -->
+  <div id="queue-individual-view" style="display:none;flex:1;overflow:hidden;flex-direction:row" class="queue-wrap">
     <div class="side-list">
-      <div class="side-list-hdr">Pending (<span id="q-pending-count">0</span>)</div>
+      <div class="side-list-hdr">Pending (<span id="q-pending-count-2">0</span>)</div>
       <div id="queue-list-items"></div>
     </div>
     <div class="review-panel">
@@ -477,14 +497,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
 // ══════════════════════════════════════════════════════════════════
 // SEED DATA
 // ══════════════════════════════════════════════════════════════════
-const SEED=[
-  {id:1,firstName:"Richard",lastName:"Koenigsberg",jobTitle:"Principal / QEWI",workEmail:"r.koenigsberg@koenigsbergeng.com",location:"New York, NY",firmName:"Koenigsberg Engineering",linkedinUrl:"https://www.linkedin.com/in/richard-koenigsberg/",tier:1,totalUnfiled:397,sub10A:153,sub10B:124,sub10C:120,wPriorSWARM:89,pitchAnchor:"Largest FISP backlog in NYC, 397 total, 153 in 10A. SWARMP on 89 buildings. No committee, fastest close path.",notes:"Lead with 10A count. Follow up SWARMP angle Day 8.",templateUsed:"B",subjectLine:"Koenigsberg Engineering + 397 buildings + CAN USA",emailBody:"Hi Richard,\n\nPublic DOB data shows Koenigsberg Engineering has 397 Cycle 10 buildings still to file, 153 of them in sub-cycle 10A (deadline: 2/21/2027). With scaffold lead times running 2–4 weeks per building, that math gets tight fast.\n\nAt CAN USA, we provide SPRAT-certified rope access for FISP inspections. Your QEWIs supervise from the ground; our technicians run the ropes. Typical result: 30–50% lower access cost and 2–3 days per building instead of 2–3 weeks, no street closures, no sidewalk shed rental.\n\nWe work alongside your existing scaffold vendors, not as a replacement.\n\nDo you have time over the next week or two to learn more? Let me know what works.",linkedinSummary:"Richard Koenigsberg is a registered architect and QEWI with 25+ years of NYC facade inspection experience.",linkedinUrl:"",linkedinConnected:false,emailSent:false,opened:false,replied:false,bounced:false,sequenceStep:0,approved:false,paused:false},
-  {id:2,firstName:"Michael",lastName:"Larkin",jobTitle:"Senior PM / QEWI",workEmail:"m.larkin@randengineering.com",location:"Brooklyn, NY",firmName:"Rand Engineering & Architecture",linkedinUrl:"https://www.linkedin.com/company/rand-engineering/",tier:1,totalUnfiled:337,sub10A:101,sub10B:118,sub10C:118,wPriorSWARM:62,pitchAnchor:"2nd largest backlog, 337 total, 101 in 10A. Runs FISP ops day-to-day.",notes:"Email Michael first. 7 days no reply, follow up with principal.",templateUsed:"B",subjectLine:"Rand Engineering + 337 buildings + CAN USA",emailBody:"Hi Michael,\n\nPublic DOB data shows Rand Engineering has 337 Cycle 10 buildings still to file, with 101 in sub-cycle 10A (deadline: 2/21/2027). That's a tight window on scaffolding alone.\n\nAt CAN USA, we provide SPRAT-certified rope access for FISP, 30–50% cheaper than suspended scaffold and 2–3 days per building instead of weeks. Your QEWIs supervise; our technicians handle the ropes.\n\nDo you have time over the next week or two to explore this?",linkedinSummary:"Michael Larkin manages facade inspection programs at Rand Engineering.",emailSent:true,opened:true,replied:true,bounced:false,sequenceStep:2,approved:true,paused:false},
-  {id:3,firstName:"Alan",lastName:"Dudley",jobTitle:"Principal Engineer / QEWI",workEmail:"a.dudley@pveengineering.com",location:"Manhattan, NY",firmName:"PVE Engineering",tier:1,totalUnfiled:246,sub10A:84,sub10B:82,sub10C:80,wPriorSWARM:41,pitchAnchor:"246 unfiled, 84 in 10A. Alan recently posted on LinkedIn about DOB enforcement changes.",notes:"Template A: LinkedIn post hook is stronger than the backlog number alone.",templateUsed:"A",subjectLine:"DOB enforcement + PVE's 84 10A buildings + CAN USA",emailBody:"Hi Alan,\n\nI saw your recent post on the DOB enforcement changes, useful context for what we're seeing in the field on rope access jobs.\n\nPVE has 84 buildings in sub-cycle 10A (deadline: 2/21/2027) still to file. That's a tight window on scaffolding.\n\nAt CAN USA, we run SPRAT-certified rope access for FISP: 30–50% cheaper and 2–3 days per building instead of weeks.\n\nDo you have time over the next week or two?",linkedinSummary:"Alan Dudley is a licensed PE and QEWI at PVE Engineering, active on LinkedIn.",emailSent:true,opened:false,replied:false,bounced:false,sequenceStep:1,approved:true,paused:false},
-  {id:4,firstName:"Paul",lastName:"Millman",jobTitle:"Principal / QEWI",workEmail:"p.millman@superstructures.com",location:"New York, NY",firmName:"SUPERSTRUCTURES Eng + Arch",tier:1,totalUnfiled:187,sub10A:61,sub10B:63,sub10C:63,wPriorSWARM:28,pitchAnchor:"Prestige firm, 187 unfiled, 61 in 10A. Lead with NYPL/Capitol Dome credibility.",notes:"Slower close. Containment netting cross-sell viable.",templateUsed:"C",subjectLine:"NYPL + Capitol Dome + FISP rope access",emailBody:"Hi Paul,\n\nCAN USA's rope access team has worked on the NYPL, US Capitol Dome, NASA facilities, and Yale's Kline Tower.\n\nSUPERSTRUCTURES has 187 Cycle 10 buildings still to file, with 61 in sub-cycle 10A (deadline: 2/21/2027). For a firm with your project profile, access methodology matters as much as economics.\n\nRope access: 30–50% lower cost, 2–3 days per building instead of weeks, no street closures.\n\nWorth a conversation?",linkedinSummary:"Paul Millman is a structural engineer and principal at SUPERSTRUCTURES.",linkedinUrl:"",linkedinConnected:false,emailSent:false,opened:false,replied:false,bounced:false,sequenceStep:0,approved:false,paused:false},
-  {id:5,firstName:"Baris",lastName:"Acar",jobTitle:"Principal / QEWI",workEmail:"b.acar@paceengineering.com",location:"Queens, NY",firmName:"Pace Engineering",tier:2,totalUnfiled:194,sub10A:62,sub10B:66,sub10C:66,wPriorSWARM:55,pitchAnchor:"194 unfiled, 55 SWARMP buildings. Highest SWARMP ratio in Tier 2. Auto-Unsafe risk is the primary angle.",notes:"High SWARMP makes Day 8 follow-up easy. Netting cross-sell viable.",templateUsed:"B",subjectLine:"Pace Engineering + 194 buildings + CAN USA",emailBody:"Hi Baris,\n\nDOB data shows Pace Engineering has 194 Cycle 10 buildings still to file, 62 in sub-cycle 10A (deadline: 2/21/2027). With 55 prior SWARMP buildings, the auto-Unsafe risk adds pressure.\n\nAt CAN USA, we provide SPRAT-certified rope access for FISP: 30–50% cheaper and 2–3 days per building. For Unsafe buildings, we also provide DOB-compliant containment netting.\n\nDo you have time over the next week or two?",linkedinSummary:"Baris Acar is principal at Pace Engineering.",emailSent:true,opened:false,replied:false,bounced:false,sequenceStep:1,approved:true,paused:false},
-  {id:6,firstName:"Christopher",lastName:"Krepcio",jobTitle:"Principal / QEWI",workEmail:"c.krepcio@merritteng.com",location:"New York, NY",firmName:"Merritt Engineering Consultants",tier:1,totalUnfiled:235,sub10A:74,sub10B:80,sub10C:81,wPriorSWARM:37,pitchAnchor:"235 unfiled, 74 in 10A. Rope access economics strong for smaller residential buildings.",notes:"May need buy-in from second principal.",templateUsed:"B",subjectLine:"Merritt Engineering + 235 buildings + CAN USA",emailBody:"Hi Christopher,\n\nPublic DOB data shows Merritt Engineering has 235 Cycle 10 buildings still to file, 74 in sub-cycle 10A (deadline: 2/21/2027). On scaffolding, that's a difficult window.\n\nAt CAN USA, we provide SPRAT-certified rope access for FISP: 30–50% lower cost and 2–3 days per building instead of 2–3 weeks.\n\nDo you have time over the next week or two?",linkedinSummary:"Christopher Krepcio is principal at Merritt Engineering Consultants.",linkedinUrl:"",linkedinConnected:false,emailSent:false,opened:false,replied:false,bounced:false,sequenceStep:0,approved:false,paused:false}
-];
+const SEED=[];
 
 const SEQ_META=[
   {day:0,label:"Initial"},
@@ -511,7 +524,7 @@ let selectedSeqEditorId=null;
 let seqCurrentTab='active';
 let msConnected=false, msAccount=null, msalInstance=null;
 
-function defaultSig(){return`<div style="font-family:Arial,sans-serif;font-size:13px;color:#8695B2;line-height:1.7"><strong style="color:#DCE3F2;font-size:14px">Pawel Wojcik</strong><br/><span style="color:#D98B28">Special Rigger | CAN USA</span><br/>E: pawel@canusa.com<br/>P: (212) 555-0180<br/>www.canusa.com</div>`;}
+function defaultSig(){return '';}
 
 // ══════════════════════════════════════════════════════════════════
 // SEQUENCE EMAIL DEFAULTS
@@ -597,8 +610,8 @@ function load(){
       azureClientId=d.azureClientId||'';
       const el=document.getElementById('save-status');
       if(el&&d.savedAt){const dt=new Date(d.savedAt);el.textContent='Restored '+dt.toLocaleDateString([],{month:'short',day:'numeric'})+' '+dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
-    }else{contacts=[...SEED];userSignature=defaultSig();}
-  }catch(e){contacts=[...SEED];userSignature=defaultSig();}
+    }else{contacts=[];userSignature=defaultSig();}
+  }catch(e){contacts=[];userSignature=defaultSig();}
   document.getElementById('sig-editor').innerHTML=userSignature;
   if(azureClientId)document.getElementById('azure-client-id').value=azureClientId;
 }
@@ -628,8 +641,8 @@ function importBackup(e){
 }
 function clearData(){
   if(!confirm('Delete all data?'))return;if(!confirm('Last chance — cannot be undone.'))return;
-  localStorage.removeItem(STORAGE_KEY);contacts=[...SEED];seqEmails={};htmlTemplates={};
-  userSignature=defaultSig();document.getElementById('sig-editor').innerHTML=userSignature;
+  localStorage.removeItem(STORAGE_KEY);contacts=[];seqEmails={};htmlTemplates={};
+  userSignature='';const se=document.getElementById('sig-editor');if(se)se.innerHTML='';
   save();renderDashboard();updateGlobals();toast('Cleared','amber');
 }
 
@@ -668,7 +681,7 @@ function showView(v){
   document.getElementById('nav-'+v).classList.add('active');
   if(v==='dashboard')renderDashboard();
   if(v==='contacts')renderContacts();
-  if(v==='queue')renderQueue();
+  if(v==='queue'){queueTab='bulk';setQueueTab('bulk');}
   if(v==='seqstudio')renderSeqStudio();
   if(v==='bulk')updateBulkCount();
   if(v==='settings')renderTracking();
@@ -730,7 +743,7 @@ function renderContacts(){
         :`<button class="btn" style="font-size:11px;padding:3px 9px;background:rgba(10,102,194,0.12);color:#5B9BD5;border-color:rgba(10,102,194,0.25)" onclick="promptLinkedIn(${c.id})">Connect</button>`)
       :`<span style="font-size:11px;color:var(--dim)">—</span>`;
     return `<tr>
-      <td style="white-space:nowrap"><div style="font-weight:500;color:var(--text);font-size:13px">${c.firstName} ${c.lastName}</div><div style="font-size:11px;color:var(--dim);margin-top:1px">${c.jobTitle}</div></td>
+      <td style="white-space:nowrap"><div style="font-weight:500;color:var(--text);font-size:13px">${c.fullName||(c.firstName+' '+c.lastName).trim()}</div><div style="font-size:11px;color:var(--dim);margin-top:1px">${c.jobTitle}</div></td>
       <td><div style="font-size:12px;color:var(--muted);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.firmName}</div></td>
       <td>${badge('b-t'+c.tier,'T'+c.tier)}</td>
       <td style="text-align:right;font-weight:600;color:${uc}">${c.totalUnfiled}</td>
@@ -756,7 +769,35 @@ function importCSV(e){
         const vals=[];let cur='',inQ=false;
         for(const ch of line){if(ch==='"')inQ=!inQ;else if(ch===','&&!inQ){vals.push(cur.trim());cur='';}else cur+=ch;}
         vals.push(cur.trim());const obj={};heads.forEach((h,i)=>{obj[h]=vals[i]||'';});
-        return{id:Date.now()+idx,firstName:obj['First Name']||'',lastName:obj['Last Name']||'',jobTitle:obj['Job Title']||'',workEmail:obj['Work Email']||'',location:obj['Location']||'',firmName:obj['Firm Name']||obj['Company Name']||'',tier:parseInt(obj['Tier'])||3,totalUnfiled:parseInt(obj['Total Unfiled'])||0,sub10A:parseInt(obj['Sub_10A'])||0,sub10B:parseInt(obj['Sub_10B'])||0,sub10C:parseInt(obj['Sub_10C'])||0,wPriorSWARM:parseInt(obj['W/ Prior SWARMP'])||0,pitchAnchor:obj['Pitch Anchor']||'',notes:obj['Notes']||'',templateUsed:obj['Template Used']||'B',subjectLine:obj['Subject Line']||'',emailBody:cleanEmDashes(obj['Email Body']||''),linkedinSummary:obj['Summarize LinkedIn profile']||'',linkedinUrl:obj['LinkedIn Profile']||obj['LinkedIn URL']||'',linkedinConnected:false,linkedinUrl:"",linkedinConnected:false,emailSent:false,opened:false,replied:false,bounced:false,sequenceStep:0,approved:false,paused:false};
+        // Support both 'Full Name' (single col) and 'First Name'+'Last Name' (split cols)
+        const fullName=obj['Full Name']||'';
+        const firstName=obj['First Name']||(fullName.includes(' ')?fullName.split(' ').slice(0,-1).join(' '):fullName)||'';
+        const lastName=obj['Last Name']||(fullName.includes(' ')?fullName.split(' ').slice(-1)[0]:'');
+        return{
+          id:Date.now()+idx,
+          firstName,lastName,
+          fullName:fullName||(firstName+' '+lastName).trim(),
+          jobTitle:obj['Job Title']||obj['Title']||'',
+          workEmail:obj['Work Email']||obj['Email']||'',
+          location:obj['Location']||obj['City']||'',
+          firmName:obj['Firm Name']||obj['Company Name']||obj['Company']||'',
+          tier:parseInt(obj['Tier'])||3,
+          totalUnfiled:parseInt(obj['Total Unfiled'])||0,
+          sub10A:parseInt(obj['Sub_10A'])||parseInt(obj['Sub 10A'])||0,
+          sub10B:parseInt(obj['Sub_10B'])||parseInt(obj['Sub 10B'])||0,
+          sub10C:parseInt(obj['Sub_10C'])||parseInt(obj['Sub 10C'])||0,
+          wPriorSWARM:parseInt(obj['W/ Prior SWARMP'])||parseInt(obj['Prior SWARMP'])||0,
+          pitchAnchor:obj['Pitch Anchor']||'',
+          notes:obj['Notes']||'',
+          templateUsed:obj['Template Used']||obj['Template']||'B',
+          subjectLine:obj['Subject Line']||'',
+          emailBody:cleanEmDashes(obj['Email Body']||''),
+          linkedinSummary:obj['Summarize LinkedIn profile']||obj['LinkedIn Summary']||'',
+          linkedinUrl:obj['LinkedIn Profile']||obj['LinkedIn URL']||obj['LinkedIn']||'',
+          linkedinConnected:false,
+          emailSent:false,opened:false,replied:false,bounced:false,
+          sequenceStep:0,approved:false,paused:false,refined:false
+        };
       });
       contacts=[...contacts,...parsed];save();renderContacts();
       toast(parsed.length+' contacts imported','green');
@@ -768,14 +809,15 @@ function importCSV(e){
 // REVIEW QUEUE
 // ══════════════════════════════════════════════════════════════════
 function renderQueue(){
-  const pending=contacts.filter(c=>!c.emailSent).sort((a,b)=>a.tier-b.tier||b.totalUnfiled-a.totalUnfiled);
-  document.getElementById('q-pending-count').textContent=pending.length;
-  const unrefined=pending.filter(c=>!c.refined).length;
-  const brBtn=document.getElementById('btn-bulk-refine');
-  if(brBtn)brBtn.textContent=unrefined>0?`Refine all (${unrefined}) with Claude`:'All refined ✓';
-  document.getElementById('queue-list-items').innerHTML=pending.map(c=>`<div class="side-item${c.id===selectedQueueId?' selected':''}" onclick="selectQueue(${c.id},this)"><div class="side-name">${c.firstName} ${c.lastName}${c.refined?' <span style=\"font-size:9px;color:var(--violet)\">✦</span>':''}</div><div class="side-firm">${c.firmName}</div><div class="side-meta">${badge('b-t'+c.tier,'T'+c.tier)}<span style="font-size:10px;color:${c.totalUnfiled>200?'var(--amber)':'var(--muted)'}">${c.totalUnfiled}</span>${c.wPriorSWARM>50?badge('b-swarmp','HOT'):''}</div></div>`).join('');
-  if(!selectedQueueId&&pending.length>0)selectedQueueId=pending[0].id;
-  if(selectedQueueId)loadReviewContact(selectedQueueId);else showEmptyReview();
+  // Route to whichever sub-tab is active
+  if(queueTab==='individual'){
+    renderQueueIndividual();
+  }else{
+    renderQueueGroups();
+    // Keep pending count in topbar in sync
+    const pending=contacts.filter(c=>!c.emailSent).length;
+    const qpc=document.getElementById('q-pending-count');if(qpc)qpc.textContent=pending;
+  }
 }
 
 function selectQueue(id,el){
@@ -910,6 +952,147 @@ async function doSend(){
 }
 function copyEmail(){const c=getC(selectedQueueId);if(!c)return;const st=sigText();navigator.clipboard.writeText(`Subject: ${document.getElementById('review-subject').value}\n\n${activeBody}${st?'\n\n'+st:''}`).then(()=>toast('Copied','blue')).catch(()=>toast('Copy failed','amber'));}
 function openInOutlook(){const c=getC(selectedQueueId);if(!c)return;const st=sigText();window.open(`mailto:${c.workEmail}?subject=${encodeURIComponent(document.getElementById('review-subject').value)}&body=${encodeURIComponent(activeBody+(st?'\n\n'+st:''))}`);}
+// ── Queue tab switching ──────────────────────────────────────────
+let queueTab='bulk';
+function setQueueTab(tab){
+  queueTab=tab;
+  const bulk=document.getElementById('queue-bulk-view');
+  const ind=document.getElementById('queue-individual-view');
+  const tb=document.getElementById('qtab-bulk');
+  const ti=document.getElementById('qtab-individual');
+  if(tab==='bulk'){
+    if(bulk)bulk.style.display='';
+    if(ind)ind.style.display='none';
+    if(tb){tb.style.borderBottomColor='var(--amber)';tb.style.color='var(--amber)';}
+    if(ti){ti.style.borderBottomColor='transparent';ti.style.color='var(--muted)';}
+    renderQueueGroups();
+  }else{
+    if(bulk)bulk.style.display='none';
+    if(ind){ind.style.display='flex';}
+    if(tb){tb.style.borderBottomColor='transparent';tb.style.color='var(--muted)';}
+    if(ti){ti.style.borderBottomColor='var(--amber)';ti.style.color='var(--amber)';}
+    renderQueueIndividual();
+  }
+}
+
+function renderQueueGroups(){
+  const pending=contacts.filter(c=>!c.emailSent&&!c.approved);
+  const el=document.getElementById('queue-groups');if(!el)return;
+  const qpc=document.getElementById('q-pending-count');if(qpc)qpc.textContent=pending.length;
+  if(!pending.length){
+    el.innerHTML='<div style="padding:40px;text-align:center;color:var(--dim);font-size:13px">No contacts pending. Import your CSV to get started.</div>';
+    return;
+  }
+  // Group by tier+template
+  const groups={};
+  pending.forEach(c=>{
+    const key='T'+c.tier+'-'+(c.templateUsed||'B');
+    if(!groups[key])groups[key]={tier:c.tier,tpl:c.templateUsed||'B',contacts:[],key};
+    groups[key].contacts.push(c);
+  });
+  // Sort groups: T1-B first, then T1-A, T1-C, T2-B...
+  const sorted=Object.values(groups).sort((a,b)=>a.tier-b.tier||a.tpl.localeCompare(b.tpl));
+  el.innerHTML=sorted.map(g=>buildGroupCard(g)).join('');
+}
+
+function buildGroupCard(g){
+  const sample=g.contacts[0];
+  const tplInfo=TPL[g.tpl]||{label:'Template '+g.tpl,cls:'b-tplb'};
+  const approvedCount=g.contacts.filter(c=>c.approved).length;
+  const allApproved=approvedCount===g.contacts.length;
+  const sampleName=esc((sample.fullName||(sample.firstName+' '+sample.lastName)).trim());
+  const bodyPreview=esc((sample.refinedEmailBody||sample.emailBody||'').slice(0,500));
+  const key=g.key; // e.g. "T1-B"
+
+  let topRight;
+  if(allApproved){
+    topRight='<span class="badge b-sent" style="font-size:12px">All approved</span>';
+  }else{
+    topRight='<button class="btn btn-solid" style="font-size:12px" '
+      +'onclick="approveGroup(this.dataset.key)" data-key="'+key+'">'
+      +'Approve all '+g.contacts.length+' contacts</button>';
+  }
+
+  const approvedNote=approvedCount>0&&!allApproved
+    ?'<span style="font-size:11px;color:var(--green)">'+approvedCount+' approved</span>':' ';
+
+  const reviewBtn='<button class="btn" style="font-size:11px" '
+    +'onclick="goReviewGroup(this.dataset.tier,this.dataset.tpl)" '
+    +'data-tier="'+g.tier+'" data-tpl="'+g.tpl+'">'
+    +'Review individually</button>';
+
+  return '<div class="card" style="margin-bottom:14px;overflow:hidden">'
+    +'<div style="padding:12px 16px;background:rgba(255,255,255,0.02);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+    +badge('b-t'+g.tier,'Tier '+g.tier)
+    +badge(tplInfo.cls,tplInfo.label)
+    +'<span style="font-size:13px;font-weight:500;color:var(--text)">'+g.contacts.length+' contacts</span>'
+    +approvedNote
+    +'<div style="flex:1"></div>'
+    +topRight
+    +'</div>'
+    +'<div style="padding:14px 16px">'
+      +'<div style="font-size:11px;color:var(--dim);margin-bottom:10px">'
+        +'Sample: <strong style="color:var(--muted)">'+sampleName+'</strong>'
+        +' at '+esc(sample.firmName||'')
+        +' &middot; '+sample.totalUnfiled+' unfiled'
+        +' &middot; '+sample.sub10A+' in 10A'
+      +'</div>'
+      +'<div style="margin-bottom:8px">'
+        +'<div class="section-label">Subject</div>'
+        +'<div style="font-size:13px;color:var(--text);padding:6px 10px;'
+          +'background:rgba(255,255,255,0.03);border-radius:6px;border:1px solid var(--border)">'
+          +esc(sample.subjectLine||'')
+        +'</div>'
+      +'</div>'
+      +'<div>'
+        +'<div class="section-label">Email body (sample)</div>'
+        +'<div style="font-size:12px;color:var(--muted);line-height:1.75;padding:10px 12px;'
+          +'background:var(--surface);border-radius:6px;border:1px solid var(--border);'
+          +'white-space:pre-wrap;max-height:180px;overflow-y:auto;font-family:Menlo,Consolas,monospace">'
+          +bodyPreview
+        +'</div>'
+      +'</div>'
+      +'<div style="margin-top:10px;display:flex;gap:8px;align-items:center">'
+        +reviewBtn
+        +'<span style="font-size:11px;color:var(--dim)">Edit specific contacts before approving.</span>'
+      +'</div>'
+    +'</div>'
+  +'</div>';
+}
+
+function approveGroup(groupKey){
+  const match=groupKey.match(/T(\d+)-([ABC])/);
+  if(!match)return;
+  const tier=parseInt(match[1]),tpl=match[2];
+  const pending=contacts.filter(c=>!c.emailSent&&!c.approved&&c.tier===tier&&(c.templateUsed||'B')===tpl);
+  const count=pending.length;
+  if(!count){toast('All contacts in this group are already approved','amber');return;}
+  if(!confirm('Approve all '+count+' contacts in Tier '+tier+' / '+(TPL[tpl]?.label||'Template '+tpl)+'?\n\nMarks them ready to send. You can still review individually first.'))return;
+  contacts=contacts.map(c=>(!c.emailSent&&!c.approved&&c.tier===tier&&(c.templateUsed||'B')===tpl)?{...c,approved:true}:c);
+  save();updateGlobals();renderQueueGroups();
+  toast(count+' contacts approved','green');
+}
+
+function goReviewGroup(tier,tpl){
+  const t=parseInt(tier);
+  setQueueTab('individual');
+  setTimeout(()=>{
+    const c=contacts.find(x=>!x.emailSent&&x.tier===t&&(x.templateUsed||'B')===tpl);
+    if(c){selectedQueueId=c.id;renderQueueIndividual();}
+  },120);
+}
+
+function renderQueueIndividual(){
+  const pending=contacts.filter(c=>!c.emailSent).sort((a,b)=>a.tier-b.tier||b.totalUnfiled-a.totalUnfiled);
+  const qpc2=document.getElementById('q-pending-count-2');if(qpc2)qpc2.textContent=pending.length;
+  const unrefined=pending.filter(c=>!c.refined).length;
+  const brBtn=document.getElementById('btn-bulk-refine');
+  if(brBtn)brBtn.textContent=unrefined>0?`Refine all (${unrefined}) with Claude`:'All refined ✓';
+  document.getElementById('queue-list-items').innerHTML=pending.map(c=>`<div class="side-item${c.id===selectedQueueId?' selected':''}" onclick="selectQueue(${c.id},this)"><div class="side-name">${esc((c.fullName||(c.firstName+' '+c.lastName)).trim())}${c.refined?' <span style="font-size:9px;color:var(--violet)">✦</span>':''}</div><div class="side-firm">${esc(c.firmName||'')}</div><div class="side-meta">${badge('b-t'+c.tier,'T'+c.tier)}<span style="font-size:10px;color:${c.totalUnfiled>200?'var(--amber)':'var(--muted)'}">${c.totalUnfiled}</span>${c.wPriorSWARM>50?badge('b-swarmp','HOT'):''}</div></div>`).join('');
+  if(!selectedQueueId&&pending.length>0)selectedQueueId=pending[0].id;
+  if(selectedQueueId)loadReviewContact(selectedQueueId);else showEmptyReview();
+}
+
 function advanceQueue(){
   const pending=contacts.filter(c=>!c.emailSent).sort((a,b)=>a.tier-b.tier||b.totalUnfiled-a.totalUnfiled);
   const next=pending.find(c=>c.id!==selectedQueueId);selectedQueueId=next?next.id:null;
@@ -1326,13 +1509,6 @@ function doBulkApprove(){
   contacts=contacts.map(c=>(!c.emailSent&&(!tp||c.templateUsed===tp)&&(!ti||String(c.tier)===ti))?{...c,approved:true}:c);
   save();updateBulkCount();updateGlobals();toast(contacts.filter(c=>c.approved&&!c.emailSent).length+' approved','green');
 }
-function goReviewGroup(tier,tpl){
-  setQueueTab('individual');
-  setTimeout(()=>{
-    const c=contacts.find(x=>!x.emailSent&&x.tier===tier&&(x.templateUsed||'B')===tpl);
-    if(c){selectedQueueId=c.id;renderQueueIndividual();}
-  },100);
-}
 
 function renderDashboard(){
   const sent=contacts.filter(c=>c.emailSent);
@@ -1348,8 +1524,18 @@ function renderDashboard(){
     return`<tr><td>${badge('b-t'+t,'Tier '+t)}</td><td style="color:var(--muted)">${tc.length}</td><td>${ts.length}</td><td>${o}</td><td style="color:var(--blue);font-weight:500">${Math.round(o/tt*100)}%</td><td>${r}</td><td style="color:var(--teal);font-weight:500">${Math.round(r/tt*100)}%</td></tr>`;
   }).join('');
   const firms={};
-  contacts.forEach(c=>{if(!firms[c.firmName])firms[c.firmName]={n:0,s:0,o:0,r:0,firm:c.firmName};firms[c.firmName].n++;if(c.emailSent)firms[c.firmName].s++;if(c.opened)firms[c.firmName].o++;if(c.replied)firms[c.firmName].r++;});
-  document.getElementById('firm-tbody').innerHTML=Object.values(firms).sort((a,b)=>b.n-a.n).map(f=>`<tr><td style="font-weight:500;color:var(--text);font-size:12px">${f.firm}</td><td style="color:var(--muted)">${f.n}</td><td>${f.s}</td><td style="color:${f.o>0?'var(--blue)':'var(--dim)'}">${f.o}</td><td style="color:${f.r>0?'var(--teal)':'var(--dim)'}">${f.r}</td></tr>`).join('');
+  contacts.forEach(c=>{if(!firms[c.firmName])firms[c.firmName]={n:0,s:0,o:0,r:0,firm:c.firmName,tier:c.tier};firms[c.firmName].n++;if(c.tier<firms[c.firmName].tier)firms[c.firmName].tier=c.tier;if(c.emailSent)firms[c.firmName].s++;if(c.opened)firms[c.firmName].o++;if(c.replied)firms[c.firmName].r++;});
+  document.getElementById('firm-tbody').innerHTML=Object.values(firms).sort((a,b)=>b.n-a.n).map(f=>{
+    const tierCls='b-t'+f.tier;
+    return `<tr>
+      <td>${badge(tierCls,'T'+f.tier)}</td>
+      <td style="font-weight:500;color:var(--text);font-size:12px">${f.firm}</td>
+      <td style="color:var(--muted)">${f.n}</td>
+      <td>${f.s}</td>
+      <td style="color:${f.o>0?'var(--blue)':'var(--dim)'}">${f.o}</td>
+      <td style="color:${f.r>0?'var(--teal)':'var(--dim)'}">${f.r}</td>
+    </tr>`;
+  }).join('');
 }
 function exportCSV(){
   const rows=contacts.map(c=>[c.firstName,c.lastName,c.firmName,c.tier,c.totalUnfiled,c.workEmail,c.emailSent?'Yes':'No',c.opened?'Yes':'No',c.replied?'Yes':'No'].join(','));
