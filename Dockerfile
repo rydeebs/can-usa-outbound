@@ -2,15 +2,16 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install dependencies — add --no-cache to force fresh install
+# Copy and install dependencies first (cache layer)
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    python -c "from googleapiclient.discovery import build; print('googleapiclient OK')" && \
+    python -c "import schedule; print('schedule OK')"
 
-# Copy everything
+# Copy application code
 COPY . .
 
-# Ensure data directory exists
 RUN mkdir -p data
 
 EXPOSE 8080
