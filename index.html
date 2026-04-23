@@ -151,6 +151,23 @@ tr:hover td{background:rgba(255,255,255,0.02)}
 .tpl-panel{position:fixed;top:0;right:-720px;width:700px;height:100vh;background:var(--sidebar);border-left:1px solid var(--border2);z-index:301;display:flex;flex-direction:column;transition:right .25s ease}
 .tpl-panel.open{right:0}
 .tpl-panel-hdr{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
+/* TEMPLATE BUILDER */
+.tb-panel{position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:400;display:none;align-items:flex-start;justify-content:center;padding:24px}
+.tb-panel.open{display:flex}
+.tb-modal{background:var(--sidebar);border:1px solid var(--border2);border-radius:12px;width:100%;max-width:860px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden}
+.tb-hdr{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
+.tb-body{flex:1;overflow-y:auto;padding:20px;display:grid;grid-template-columns:1fr 320px;gap:16px}
+.tb-left{display:flex;flex-direction:column;gap:14px}
+.tb-right{display:flex;flex-direction:column;gap:14px}
+.tb-footer{padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-shrink:0;background:var(--sidebar)}
+.ph-chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;background:var(--violet-bg);color:var(--violet);border:1px solid rgba(123,104,200,0.25);cursor:pointer;margin:2px;transition:all .1s;font-family:Menlo,Consolas,monospace}
+.ph-chip:hover{background:rgba(123,104,200,0.25)}
+.firm-list{max-height:220px;overflow-y:auto;border:1px solid var(--border2);border-radius:6px;background:rgba(255,255,255,0.03)}
+.firm-row{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid rgba(255,255,255,0.03);cursor:pointer}
+.firm-row:hover{background:rgba(255,255,255,0.04)}
+.firm-row input[type=checkbox]{accent-color:var(--amber);width:14px;height:14px;cursor:pointer}
+.tb-preview{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;color:var(--muted);font-family:Menlo,Consolas,monospace;white-space:pre-wrap;line-height:1.75;max-height:220px;overflow-y:auto}
+.saved-tpl-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px}
 .tpl-slot{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;transition:border-color .15s}
 .tpl-slot.has-template{border-color:rgba(34,168,152,0.35)}
 .tpl-slot-hdr{display:flex;align-items:center;gap:8px;margin-bottom:10px}
@@ -243,6 +260,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
   <span id="hot-alert" style="display:none;font-size:11px;color:var(--red);background:var(--red-bg);padding:4px 10px;border-radius:20px;border:1px solid rgba(192,80,80,0.2);margin-right:10px"></span>
   <span id="save-status" style="font-size:11px;color:var(--dim);margin-right:12px"></span>
   <span style="font-size:11px;color:var(--dim)">Pawel &nbsp;·&nbsp; <span style="color:var(--muted)">CAN USA</span></span>
+  <button class="btn" style="font-size:11px;padding:4px 10px;margin-left:8px;color:var(--dim)" onclick="doLogout()">Sign out</button>
 </div>
 
 <div class="app">
@@ -269,6 +287,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     <span class="topbar-title" style="flex:1">Contacts</span>
     <input type="file" id="csv-file" accept=".csv" style="display:none" onchange="importCSV(event)"/>
     <button class="btn" onclick="document.getElementById('csv-file').click()">Import CSV</button>
+    <button class="btn btn-violet" onclick="openTB()">Template Builder</button>
     <button class="btn btn-amber" onclick="showView('queue')">Review queue <span id="q-count-btn"></span></button>
   </div>
   <div class="stat-strip">
@@ -411,7 +430,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     </div>
     <div class="settings-card">
       <div style="font-weight:500;color:var(--text);font-size:13px;margin-bottom:8px">Data storage</div>
-      <div style="font-size:11px;color:var(--dim);line-height:1.6;margin-bottom:12px">Auto-saved to browser localStorage after every action. Reopening on the same browser restores everything. Export backups to move between devices or browsers.</div>
+      <div style="font-size:11px;color:var(--dim);line-height:1.6;margin-bottom:12px">Data is saved to the Railway server after every action. Both you and Pawel see the same live state. Export backups as a local copy.</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-green" onclick="exportBackup()">Export backup (.json)</button>
         <label class="btn" style="cursor:pointer">Import backup<input type="file" accept=".json" style="display:none" onchange="importBackup(event)"/></label>
@@ -472,6 +491,91 @@ tr:hover td{background:rgba(255,255,255,0.02)}
   </div>
 </div>
 
+<!-- TEMPLATE BUILDER MODAL -->
+<div class="tb-panel" id="tb-panel" onclick="if(event.target===this)closeTB()">
+  <div class="tb-modal">
+    <div class="tb-hdr">
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:15px;color:var(--text)">Template Builder</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">Create a custom email template, assign it to a tier, and hand-pick which firms receive it</div>
+      </div>
+      <button class="btn" onclick="closeTB()">Close</button>
+    </div>
+    <div class="tb-body">
+      <!-- Left: editor -->
+      <div class="tb-left">
+        <!-- Saved templates list -->
+        <div id="tb-saved-section">
+          <div class="section-label" style="margin-bottom:6px">Saved templates (<span id="tb-saved-count">0</span>)</div>
+          <div id="tb-saved-list"></div>
+          <button class="btn btn-green" style="margin-top:8px;width:100%" onclick="tbNewTemplate()">+ New template</button>
+        </div>
+        <!-- Editor (shown when creating/editing) -->
+        <div id="tb-editor" style="display:none">
+          <div style="display:flex;gap:10px;margin-bottom:14px">
+            <div style="flex:1">
+              <div class="section-label" style="margin-bottom:5px">Template name</div>
+              <input class="inp" id="tb-name" placeholder="e.g. Tier 1 — Large firms outreach" style="width:100%"/>
+            </div>
+            <div style="width:110px">
+              <div class="section-label" style="margin-bottom:5px">Tier</div>
+              <select class="inp" id="tb-tier" onchange="tbFilterFirms()" style="width:100%">
+                <option value="1">Tier 1</option>
+                <option value="2">Tier 2</option>
+                <option value="3">Tier 3</option>
+                <option value="all">All tiers</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-bottom:14px">
+            <div class="section-label" style="margin-bottom:5px">Subject line</div>
+            <input class="inp" id="tb-subject" placeholder="e.g. {{firmName}} + {{totalUnfiled}} buildings + CAN USA" style="width:100%;font-family:inherit"/>
+          </div>
+          <div style="margin-bottom:10px">
+            <div class="section-label" style="margin-bottom:5px">Email body</div>
+            <textarea class="inp" id="tb-body" rows="9" placeholder="Hi {{firstName}},&#10;&#10;Your email body here..." style="width:100%;font-family:'Menlo','Consolas',monospace;font-size:12px;line-height:1.8"></textarea>
+          </div>
+          <div style="margin-bottom:6px">
+            <div class="section-label" style="margin-bottom:5px">Available placeholders — click to insert</div>
+            <div id="tb-chips"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Right: firm selector + preview -->
+      <div class="tb-right">
+        <div id="tb-firm-section" style="display:none">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <div class="section-label" style="flex:1">Select firms (<span id="tb-firm-count">0</span> selected)</div>
+            <button class="btn" style="font-size:10px;padding:2px 8px" onclick="tbSelectAllFirms(true)">All</button>
+            <button class="btn" style="font-size:10px;padding:2px 8px" onclick="tbSelectAllFirms(false)">None</button>
+          </div>
+          <input class="inp" id="tb-firm-search" placeholder="Search firms..." oninput="tbRenderFirms()" style="width:100%;margin-bottom:8px"/>
+          <div class="firm-list" id="tb-firm-list"></div>
+          <div style="margin-top:8px;font-size:11px;color:var(--dim)" id="tb-contact-preview-count"></div>
+        </div>
+        <div id="tb-preview-section" style="display:none">
+          <div class="section-label" style="margin-bottom:6px">Preview with sample contact</div>
+          <div style="margin-bottom:6px">
+            <div style="font-size:10px;color:var(--dim);margin-bottom:3px">Subject</div>
+            <div id="tb-preview-subject" style="font-size:12px;font-weight:500;color:var(--text);padding:5px 8px;background:var(--surface);border-radius:5px;border:1px solid var(--border)"></div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--dim);margin-bottom:3px">Body</div>
+            <div id="tb-preview-body" class="tb-preview"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="tb-footer" id="tb-footer" style="display:none">
+      <button class="btn" onclick="tbCancelEdit()">Cancel</button>
+      <div style="flex:1"></div>
+      <div style="font-size:12px;color:var(--muted)" id="tb-apply-count"></div>
+      <button class="btn btn-amber" onclick="tbSaveTemplate()">Save template</button>
+      <button class="btn btn-solid" onclick="tbApplyTemplate()">Save &amp; apply to contacts</button>
+    </div>
+  </div>
+</div>
+
 <!-- LINKEDIN CONNECTION MODAL -->
 <div class="li-modal-backdrop" id="li-modal-backdrop">
   <div class="li-modal">
@@ -516,9 +620,11 @@ const TPL_SLOT_KEYS=[];
 // ══════════════════════════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════════════════════════
-const STORAGE_KEY='canusa_v3';
+// State stored server-side via /api/state
 let contacts=[], seqEmails={}, userSignature='', azureClientId='';
 let htmlTemplates={}; // { 'T1-B': {html:'...', name:'...', uploadedAt:'...'}, ... }
+let customTemplates=[]; // [{id,name,tier,firms:[],subject,body,createdAt}]
+let tbEditId=null, tbSelectedFirms=new Set();
 let selectedQueueId=null, currentMode='orig', refinedBody='', activeBody='';
 let selectedSeqEditorId=null;
 let seqCurrentTab='active';
@@ -590,35 +696,76 @@ function applyHtmlTemplate(templateHtml,contact,emailBody,subject){
 // LOCALSTORAGE
 // ══════════════════════════════════════════════════════════════════
 function save(){
-  try{
-    const data={contacts,seqEmails,htmlTemplates,userSignature,azureClientId,savedAt:new Date().toISOString()};
-    localStorage.setItem(STORAGE_KEY,JSON.stringify(data));
-    const el=document.getElementById('save-status');
-    if(el)el.textContent='Saved '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-  }catch(e){console.warn('Storage full:',e);}
+  const data={contacts,seqEmails,htmlTemplates,customTemplates:customTemplates||[],userSignature,azureClientId,savedAt:new Date().toISOString()};
+  fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+    .then(r=>{if(r.status===401)window.location.href='/login';})
+    .then(()=>{
+      const el=document.getElementById('save-status');
+      if(el)el.textContent='Saved '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+      _lastSavedAt=data.savedAt;
+    })
+    .catch(e=>console.warn('Save failed:',e));
 }
 
-function load(){
+let _lastSavedAt=null;
+
+async function load(){
   try{
-    const raw=localStorage.getItem(STORAGE_KEY);
-    if(raw){
-      const d=JSON.parse(raw);
-      contacts=d.contacts&&d.contacts.length?d.contacts:[...SEED];
-      seqEmails=d.seqEmails||{};
-      htmlTemplates=d.htmlTemplates||{};
-      userSignature=d.userSignature||defaultSig();
-      azureClientId=d.azureClientId||'';
+    const r=await fetch('/api/state');
+    if(r.status===401){window.location.href='/login';return;}
+    if(!r.ok)throw new Error('State load failed: '+r.status);
+    const d=await r.json();
+    contacts=d.contacts&&d.contacts.length?d.contacts:[];
+    seqEmails=d.seqEmails||{};
+    htmlTemplates=d.htmlTemplates||{};
+    customTemplates=d.customTemplates||[];
+    userSignature=d.userSignature||'';
+    azureClientId=d.azureClientId||'';
+    _lastSavedAt=d.savedAt||null;
+    const se=document.getElementById('sig-editor');
+    if(se)se.innerHTML=userSignature;
+    if(azureClientId){const el=document.getElementById('azure-client-id');if(el)el.value=azureClientId;}
+    if(d.savedAt){
+      const dt=new Date(d.savedAt);
       const el=document.getElementById('save-status');
-      if(el&&d.savedAt){const dt=new Date(d.savedAt);el.textContent='Restored '+dt.toLocaleDateString([],{month:'short',day:'numeric'})+' '+dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
-    }else{contacts=[];userSignature=defaultSig();}
-  }catch(e){contacts=[];userSignature=defaultSig();}
-  document.getElementById('sig-editor').innerHTML=userSignature;
-  if(azureClientId)document.getElementById('azure-client-id').value=azureClientId;
+      if(el)el.textContent='Restored '+dt.toLocaleDateString([],{month:'short',day:'numeric'})+' '+dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    }
+  }catch(e){
+    console.error('Load failed:',e);
+    contacts=[];userSignature='';seqEmails={};htmlTemplates={};customTemplates=[];
+  }
 }
+
+function startAutoRefresh(){
+  setInterval(async()=>{
+    try{
+      const r=await fetch('/api/state');
+      if(!r.ok)return;
+      const d=await r.json();
+      if(d.savedAt&&d.savedAt!==_lastSavedAt){
+        _lastSavedAt=d.savedAt;
+        contacts=d.contacts||[];
+        seqEmails=d.seqEmails||{};
+        htmlTemplates=d.htmlTemplates||{};
+        customTemplates=d.customTemplates||[];
+        userSignature=d.userSignature||'';
+        renderDashboard();updateGlobals();
+        const el=document.getElementById('save-status');
+        if(el)el.textContent='Synced '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+      }
+    }catch(e){}
+  },30000);
+}
+
+async function doLogout(){
+  await fetch('/api/logout',{method:'POST'});
+  window.location.href='/login';
+}
+
 
 function exportBackup(){
   const a=document.createElement('a');
-  a.href='data:application/json,'+encodeURIComponent(JSON.stringify({contacts,seqEmails,htmlTemplates,userSignature,azureClientId,exportedAt:new Date().toISOString()},null,2));
+  a.href='data:application/json,'+encodeURIComponent(JSON.stringify({contacts,seqEmails,htmlTemplates,customTemplates,userSignature,azureClientId,exportedAt:new Date().toISOString()},null,2));
   a.download='canusa_backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();
   toast('Backup exported','green');
 }
@@ -630,10 +777,10 @@ function importBackup(e){
       const d=JSON.parse(ev.target.result);
       if(!d.contacts)throw new Error('Invalid backup');
       if(!confirm('Replace all current data with backup?'))return;
-      contacts=d.contacts;seqEmails=d.seqEmails||{};htmlTemplates=d.htmlTemplates||{};
-      userSignature=d.userSignature||defaultSig();azureClientId=d.azureClientId||'';
-      document.getElementById('sig-editor').innerHTML=userSignature;
-      if(azureClientId)document.getElementById('azure-client-id').value=azureClientId;
+      contacts=d.contacts;seqEmails=d.seqEmails||{};htmlTemplates=d.htmlTemplates||{};customTemplates=d.customTemplates||[];
+      userSignature=d.userSignature||'';azureClientId=d.azureClientId||'';
+      const se=document.getElementById('sig-editor');if(se)se.innerHTML=userSignature;
+      if(azureClientId){const el=document.getElementById('azure-client-id');if(el)el.value=azureClientId;}
       save();renderDashboard();updateGlobals();
       toast('Backup restored — '+contacts.length+' contacts','green');
     }catch(err){alert('Import failed: '+err.message);}
@@ -641,7 +788,7 @@ function importBackup(e){
 }
 function clearData(){
   if(!confirm('Delete all data?'))return;if(!confirm('Last chance — cannot be undone.'))return;
-  localStorage.removeItem(STORAGE_KEY);contacts=[];seqEmails={};htmlTemplates={};
+  contacts=[];seqEmails={};htmlTemplates={};customTemplates=[];
   userSignature='';const se=document.getElementById('sig-editor');if(se)se.innerHTML='';
   save();renderDashboard();updateGlobals();toast('Cleared','amber');
 }
@@ -1684,6 +1831,295 @@ function renderTracking(){
 }
 
 // ══════════════════════════════════════════════════════════════════
+// TEMPLATE BUILDER
+// ══════════════════════════════════════════════════════════════════
+const TB_PLACEHOLDERS=[
+  {label:'{{firstName}}',   desc:'First name'},
+  {label:'{{lastName}}',    desc:'Last name'},
+  {label:'{{fullName}}',    desc:'Full name'},
+  {label:'{{firmName}}',    desc:'Firm name'},
+  {label:'{{jobTitle}}',    desc:'Job title'},
+  {label:'{{totalUnfiled}}',desc:'Total unfiled buildings'},
+  {label:'{{sub10A}}',      desc:'Sub-cycle 10A count'},
+  {label:'{{sub10B}}',      desc:'Sub-cycle 10B count'},
+  {label:'{{wPriorSWARM}}', desc:'Prior SWARMP count'},
+  {label:'{{deadline10A}}', desc:'10A deadline (2/21/2027)'},
+  {label:'{{deadline10B}}', desc:'10B deadline (2/21/2028)'},
+];
+
+function applyPlaceholders(template, contact){
+  return template
+    .replace(/\{\{firstName\}\}/g, contact.firstName||'')
+    .replace(/\{\{lastName\}\}/g, contact.lastName||'')
+    .replace(/\{\{fullName\}\}/g, contact.fullName||(contact.firstName+' '+contact.lastName).trim())
+    .replace(/\{\{firmName\}\}/g, contact.firmName||'')
+    .replace(/\{\{jobTitle\}\}/g, contact.jobTitle||'')
+    .replace(/\{\{totalUnfiled\}\}/g, contact.totalUnfiled||0)
+    .replace(/\{\{sub10A\}\}/g, contact.sub10A||0)
+    .replace(/\{\{sub10B\}\}/g, contact.sub10B||0)
+    .replace(/\{\{wPriorSWARM\}\}/g, contact.wPriorSWARM||0)
+    .replace(/\{\{deadline10A\}\}/g, '2/21/2027')
+    .replace(/\{\{deadline10B\}\}/g, '2/21/2028');
+}
+
+function openTB(){
+  document.getElementById('tb-panel').classList.add('open');
+  tbRenderSaved();
+  document.getElementById('tb-editor').style.display='none';
+  document.getElementById('tb-firm-section').style.display='none';
+  document.getElementById('tb-preview-section').style.display='none';
+  document.getElementById('tb-footer').style.display='none';
+  // Render placeholder chips
+  document.getElementById('tb-chips').innerHTML=TB_PLACEHOLDERS.map(p=>
+    '<span class="ph-chip" title="'+p.desc+'" data-ph="'+p.label+'" onclick="tbInsertPlaceholder(this.dataset.ph)">'+p.label+'</span>'
+  ).join('');
+}
+function closeTB(){document.getElementById('tb-panel').classList.remove('open');}
+
+function tbRenderSaved(){
+  const el=document.getElementById('tb-saved-list');
+  const cnt=document.getElementById('tb-saved-count');
+  if(cnt)cnt.textContent=customTemplates.length;
+  if(!customTemplates.length){
+    el.innerHTML='<div style="font-size:12px;color:var(--dim);padding:10px 0">No saved templates yet. Click New template to create one.</div>';
+    return;
+  }
+  el.innerHTML=customTemplates.map(t=>{
+    const firmCount=t.firms&&t.firms.length?t.firms.length:'All';
+    const applied=contacts.filter(c=>c.customTemplateId===t.id).length;
+    const tierLabel=t.tier==='all'?'All tiers':'Tier '+t.tier;
+    return '<div class="saved-tpl-card">'
+      +'<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px">'
+        +'<div style="flex:1">'
+          +'<div style="font-weight:500;font-size:13px;color:var(--text)">'+esc(t.name)+'</div>'
+          +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+tierLabel+' &nbsp;&middot;&nbsp; '+firmCount+' firms &nbsp;&middot;&nbsp; '
+            +(applied>0?'<span style="color:var(--green)">'+applied+' contacts using this</span>':'not applied yet')
+          +'</div>'
+        +'</div>'
+        +'<div style="display:flex;gap:6px">'
+          +'<button class="btn" style="font-size:11px;padding:3px 9px" data-id="'+t.id+'" onclick="tbEditTemplate(this.dataset.id)">Edit</button>'
+          +'<button class="btn btn-amber" style="font-size:11px;padding:3px 9px" data-id="'+t.id+'" onclick="tbApplyExisting(this.dataset.id)">Apply</button>'
+          +'<button class="btn" style="font-size:11px;padding:3px 9px;color:var(--red);border-color:rgba(192,80,80,0.25)" data-id="'+t.id+'" onclick="tbDeleteTemplate(this.dataset.id)">Delete</button>'
+        +'</div>'
+      +'</div>'
+      +'<div style="font-size:11px;color:var(--dim);font-family:Menlo,monospace;background:rgba(255,255,255,0.03);border-radius:5px;padding:6px 8px">'
+        +'<strong style="color:var(--muted)">Subj:</strong> '+esc(t.subject)
+      +'</div>'
+    +'</div>';
+  }).join('');
+}
+function tbNewTemplate(){
+  tbEditId=null;
+  tbSelectedFirms=new Set();
+  document.getElementById('tb-name').value='';
+  document.getElementById('tb-subject').value='';
+  document.getElementById('tb-body').value='';
+  document.getElementById('tb-tier').value='1';
+  document.getElementById('tb-editor').style.display='flex';
+  document.getElementById('tb-editor').style.flexDirection='column';
+  document.getElementById('tb-firm-section').style.display='block';
+  document.getElementById('tb-preview-section').style.display='block';
+  document.getElementById('tb-footer').style.display='flex';
+  document.getElementById('tb-saved-section').style.display='none';
+  tbFilterFirms();
+  tbUpdatePreview();
+}
+
+function tbEditTemplate(id){
+  const t=customTemplates.find(x=>x.id===id);if(!t)return;
+  tbEditId=id;
+  tbSelectedFirms=new Set(t.firms||[]);
+  document.getElementById('tb-name').value=t.name||'';
+  document.getElementById('tb-subject').value=t.subject||'';
+  document.getElementById('tb-body').value=t.body||'';
+  document.getElementById('tb-tier').value=t.tier||'1';
+  document.getElementById('tb-editor').style.display='flex';
+  document.getElementById('tb-editor').style.flexDirection='column';
+  document.getElementById('tb-firm-section').style.display='block';
+  document.getElementById('tb-preview-section').style.display='block';
+  document.getElementById('tb-footer').style.display='flex';
+  document.getElementById('tb-saved-section').style.display='none';
+  tbFilterFirms();
+  tbUpdatePreview();
+}
+
+function tbCancelEdit(){
+  document.getElementById('tb-editor').style.display='none';
+  document.getElementById('tb-firm-section').style.display='none';
+  document.getElementById('tb-preview-section').style.display='none';
+  document.getElementById('tb-footer').style.display='none';
+  document.getElementById('tb-saved-section').style.display='block';
+  tbEditId=null;
+  tbSelectedFirms=new Set();
+  tbRenderSaved();
+}
+
+function tbFilterFirms(){
+  tbSelectedFirms=new Set(); // reset on tier change
+  tbRenderFirms();
+}
+
+function tbRenderFirms(){
+  const tier=document.getElementById('tb-tier').value;
+  const search=(document.getElementById('tb-firm-search')?.value||'').toLowerCase();
+  const firmMap={};
+  contacts.forEach(c=>{
+    if(!c.firmName)return;
+    if(tier!=='all'&&String(c.tier)!==String(tier))return;
+    if(!firmMap[c.firmName])firmMap[c.firmName]={name:c.firmName,count:0,tier:c.tier};
+    firmMap[c.firmName].count++;
+  });
+  let firms=Object.values(firmMap).sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name));
+  if(search)firms=firms.filter(f=>f.name.toLowerCase().includes(search));
+  const el=document.getElementById('tb-firm-list');
+  if(!firms.length){el.innerHTML='<div style="padding:10px;font-size:12px;color:var(--dim)">No firms match.</div>';return;}
+  el.innerHTML=firms.map(f=>{
+    const checked=tbSelectedFirms.has(f.name);
+    return '<div class="firm-row" data-firm="'+esc(f.name)+'" onclick="tbToggleFirm(this.dataset.firm)">'
+      +'<input type="checkbox" '+(checked?'checked':'')+' onclick="event.stopPropagation();tbToggleFirm(this.parentElement.dataset.firm)"/>'
+      +'<div style="flex:1;font-size:12px;color:var(--text)">'+esc(f.name)+'</div>'
+      +'<div style="font-size:11px;color:var(--dim)">'+f.count+'</div>'
+    +'</div>';
+  }).join('');
+  tbUpdateFirmCount();
+}
+function tbToggleFirm(name){
+  if(tbSelectedFirms.has(name))tbSelectedFirms.delete(name);
+  else tbSelectedFirms.add(name);
+  tbRenderFirms();
+  tbUpdatePreview();
+}
+
+function tbSelectAllFirms(select){
+  const tier=document.getElementById('tb-tier').value;
+  contacts.forEach(c=>{
+    if(!c.firmName)return;
+    if(tier!=='all'&&String(c.tier)!==String(tier))return;
+    if(select)tbSelectedFirms.add(c.firmName);else tbSelectedFirms.delete(c.firmName);
+  });
+  tbRenderFirms();
+  tbUpdatePreview();
+}
+
+function tbUpdateFirmCount(){
+  const cnt=document.getElementById('tb-firm-count');
+  if(cnt)cnt.textContent=tbSelectedFirms.size;
+  const tier=document.getElementById('tb-tier').value;
+  const affected=contacts.filter(c=>c.firmName&&tbSelectedFirms.has(c.firmName)&&(tier==='all'||String(c.tier)===String(tier))).length;
+  const ac=document.getElementById('tb-apply-count');
+  if(ac)ac.textContent=affected+' contacts will be updated';
+  const cc=document.getElementById('tb-contact-preview-count');
+  if(cc)cc.textContent=affected+' contacts across '+tbSelectedFirms.size+' firms';
+}
+
+function tbUpdatePreview(){
+  tbUpdateFirmCount();
+  const subj=document.getElementById('tb-subject')?.value||'';
+  const body=document.getElementById('tb-body')?.value||'';
+  // Find a sample contact from selected firms
+  const tier=document.getElementById('tb-tier').value;
+  const sample=contacts.find(c=>c.firmName&&tbSelectedFirms.has(c.firmName)&&(tier==='all'||String(c.tier)===String(tier)))
+    ||contacts.find(c=>tier==='all'||String(c.tier)===String(tier))
+    ||contacts[0];
+  const ps=document.getElementById('tb-preview-subject');
+  const pb=document.getElementById('tb-preview-body');
+  if(ps)ps.textContent=sample?applyPlaceholders(subj,sample):subj;
+  if(pb)pb.textContent=sample?applyPlaceholders(body,sample):body;
+}
+
+function tbInsertPlaceholder(ph){
+  const ta=document.getElementById('tb-body');
+  if(!ta)return;
+  const start=ta.selectionStart,end=ta.selectionEnd;
+  const val=ta.value;
+  ta.value=val.slice(0,start)+ph+val.slice(end);
+  ta.selectionStart=ta.selectionEnd=start+ph.length;
+  ta.focus();
+  tbUpdatePreview();
+}
+
+function tbSaveTemplate(){
+  const name=document.getElementById('tb-name')?.value?.trim();
+  const subject=document.getElementById('tb-subject')?.value?.trim();
+  const body=document.getElementById('tb-body')?.value?.trim();
+  const tier=document.getElementById('tb-tier')?.value;
+  if(!name)return toast('Give the template a name','amber');
+  if(!subject)return toast('Subject line is required','amber');
+  if(!body)return toast('Email body is required','amber');
+  if(!tbSelectedFirms.size)return toast('Select at least one firm','amber');
+  const tpl={
+    id:tbEditId||('tpl_'+Date.now()),
+    name,subject,body,tier,
+    firms:[...tbSelectedFirms],
+    createdAt:new Date().toISOString()
+  };
+  if(tbEditId){
+    customTemplates=customTemplates.map(t=>t.id===tbEditId?tpl:t);
+  }else{
+    customTemplates.push(tpl);
+  }
+  save();
+  toast('Template saved: '+name,'green');
+  tbCancelEdit();
+}
+
+function tbApplyTemplate(){
+  const name=document.getElementById('tb-name')?.value?.trim();
+  const subject=document.getElementById('tb-subject')?.value?.trim();
+  const body=document.getElementById('tb-body')?.value?.trim();
+  const tier=document.getElementById('tb-tier')?.value;
+  if(!name||!subject||!body)return toast('Complete all fields before applying','amber');
+  if(!tbSelectedFirms.size)return toast('Select at least one firm','amber');
+  const tplId=tbEditId||('tpl_'+Date.now());
+  const tpl={id:tplId,name,subject,body,tier,firms:[...tbSelectedFirms],createdAt:new Date().toISOString()};
+  if(tbEditId){customTemplates=customTemplates.map(t=>t.id===tbEditId?tpl:t);}
+  else{customTemplates.push(tpl);}
+  // Apply to matching contacts — update their subjectLine and emailBody
+  let count=0;
+  contacts=contacts.map(c=>{
+    if(!c.firmName||!tbSelectedFirms.has(c.firmName))return c;
+    if(tier!=='all'&&String(c.tier)!==String(tier))return c;
+    if(c.emailSent)return c; // never overwrite sent contacts
+    count++;
+    return{...c,
+      subjectLine:applyPlaceholders(subject,c),
+      emailBody:applyPlaceholders(body,c),
+      customTemplateId:tplId
+    };
+  });
+  save();
+  renderContacts();
+  renderDashboard();
+  toast('Applied to '+count+' contacts','green');
+  tbCancelEdit();
+}
+
+function tbApplyExisting(id){
+  const tpl=customTemplates.find(t=>t.id===id);if(!tpl)return;
+  if(!confirm('Apply "'+tpl.name+'" to all matching unsent contacts?\nThis will overwrite their subject line and email body.'))return;
+  const firmSet=new Set(tpl.firms);
+  let count=0;
+  contacts=contacts.map(c=>{
+    if(!c.firmName||!firmSet.has(c.firmName))return c;
+    if(tpl.tier!=='all'&&String(c.tier)!==String(tpl.tier))return c;
+    if(c.emailSent)return c;
+    count++;
+    return{...c,subjectLine:applyPlaceholders(tpl.subject,c),emailBody:applyPlaceholders(tpl.body,c),customTemplateId:tpl.id};
+  });
+  save();renderContacts();renderDashboard();
+  toast('Applied to '+count+' contacts','green');
+  tbRenderSaved();
+}
+
+function tbDeleteTemplate(id){
+  const tpl=customTemplates.find(t=>t.id===id);if(!tpl)return;
+  if(!confirm('Delete template "'+tpl.name+'"?'))return;
+  customTemplates=customTemplates.filter(t=>t.id!==id);
+  save();tbRenderSaved();
+  toast('Template deleted','amber');
+}
+
+// ══════════════════════════════════════════════════════════════════
 // LINKEDIN MODAL
 // ══════════════════════════════════════════════════════════════════
 let _liContactId=null;
@@ -1746,10 +2182,14 @@ function getLinkedInPending(){
 // ══════════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════════
-load();
-showView('dashboard');
-renderTracking();
-updateGlobals();
+// Async init - load state from server then render
+(async()=>{
+  await load();
+  showView('dashboard');
+  renderTracking();
+  updateGlobals();
+  startAutoRefresh(); // poll server every 30s for changes from other browsers
+})();
 </script>
 </body>
 </html>
