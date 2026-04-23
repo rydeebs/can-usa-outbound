@@ -176,17 +176,25 @@ def write_state(state: dict) -> None:
 
 # ── Token cache bootstrap ──────────────────────────────────────────────────
 def _bootstrap_token_cache() -> None:
-    """Write TOKEN_CACHE_JSON env var to disk so the agent can use it."""
-    token_json = os.environ.get("TOKEN_CACHE_JSON")
-    if token_json:
+    """
+    Write Google token from env var to disk on every Railway startup.
+    Railway filesystem resets on redeploy — env var is the persistence layer.
+    """
+    google_token = os.environ.get("TOKEN_GOOGLE_JSON")
+    google_file  = ROOT / "agent" / "token_google.json"
+    if google_token:
         try:
-            TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-            TOKEN_FILE.write_text(token_json, encoding="utf-8")
-            log.info("Token cache written from env var.")
+            google_file.parent.mkdir(parents=True, exist_ok=True)
+            google_file.write_text(google_token, encoding="utf-8")
+            log.info("Google token written from TOKEN_GOOGLE_JSON env var.")
         except Exception as e:
-            log.error(f"Token cache write error: {e}")
-    elif not TOKEN_FILE.exists():
-        log.warning("token_cache.json not found. Run auth.py then set TOKEN_CACHE_JSON in Railway.")
+            log.error(f"Google token write error: {e}")
+    elif not google_file.exists():
+        log.warning(
+            "token_google.json not found. "
+            "Run agent/auth.py then set TOKEN_GOOGLE_JSON in Railway."
+        )
+
 
 # ── Agent background loop ──────────────────────────────────────────────────
 async def _agent_loop() -> None:
@@ -358,7 +366,7 @@ async def health():
             "storage": "postgres" if DATABASE_URL else "file",
             "contacts": len(state.get("contacts", [])),
             "agent_poll_interval_min": POLL_INTERVAL // 60,
-            "token_cache_exists": TOKEN_FILE.exists(),
+            "token_cache_exists": (ROOT / "agent" / "token_google.json").exists(),
         }
     except Exception as e:
         return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)

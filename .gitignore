@@ -41,6 +41,11 @@ Thumbs.db
 # Lock file (runtime only)
 data/.contacts.lock
 
-# MSAL token cache — contains Pawel's auth token, never commit
+# Auth tokens — contain Pawel's credentials, never commit
 agent/token_cache.json
 token_cache.json
+agent/token_google.json
+token_google.json
+# Google OAuth credentials file — contains client secret, never commit
+agent/google_credentials.json
+google_credentials.json
