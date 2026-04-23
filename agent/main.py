@@ -5,11 +5,17 @@ See AGENTS.md for setup. See SOUL.md for Pawel's voice.
 """
 
 from __future__ import annotations
+
+import os
+from pathlib import Path
+
+if os.environ.get("TOKEN_CACHE_JSON"):
+    Path(__file__).parent.joinpath("token_cache.json").write_text(os.environ["TOKEN_CACHE_JSON"])
+
 import logging
 import time
 import schedule
 from dotenv import load_dotenv
-import os
 
 from graph_client import GraphClient
 from router import classify_reply
