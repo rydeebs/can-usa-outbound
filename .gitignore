@@ -40,3 +40,7 @@ Thumbs.db
 
 # Lock file (runtime only)
 data/.contacts.lock
+
+# MSAL token cache — contains Pawel's auth token, never commit
+agent/token_cache.json
+token_cache.json
