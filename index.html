@@ -269,8 +269,8 @@ tr:hover td{background:rgba(255,255,255,0.02)}
   <button id="nav-queue" class="nav-btn" onclick="showView('queue')">Review queue <span id="pending-badge" class="nav-badge" style="display:none"></span></button>
   <button id="nav-seqstudio" class="nav-btn" onclick="showView('seqstudio')">Sequence Studio</button>
   <button id="nav-bulk" class="nav-btn" onclick="showView('bulk')">Bulk actions</button>
-  <button id="nav-alerts" class="nav-btn" onclick="showView('alerts')">Alerts <span id="alerts-badge" class="nav-badge" style="display:none;background:#C05050"></span></button>
   <button id="nav-settings" class="nav-btn" onclick="showView('settings')">Settings</button>
+  <button id="nav-alerts" class="nav-btn" onclick="showView('alerts')">Alerts <span id="alerts-badge" class="nav-badge" style="display:none;background:#C05050"></span></button>
   <div style="flex:1"></div>
   <span id="hot-alert" style="display:none;font-size:11px;color:var(--red);background:var(--red-bg);padding:4px 10px;border-radius:20px;border:1px solid rgba(192,80,80,0.2);margin-right:10px"></span>
   <span id="save-status" style="font-size:11px;color:var(--dim);margin-right:12px"></span>
@@ -1213,20 +1213,32 @@ async function doBulkRefine(){
 }
 function doApprove(){if(!selectedQueueId)return;updateC(selectedQueueId,{approved:true,emailBody:activeBody,subjectLine:document.getElementById('review-subject').value});advanceQueue();toast('Approved','green');}
 async function doSend(){
-  if(!selectedQueueId)return;const c=getC(selectedQueueId);if(!c)return;
+  if(!selectedQueueId)return;
+  const c=getC(selectedQueueId);if(!c)return;
   const subj=document.getElementById('review-subject').value;
-  const full=activeBody+(sigText()?'\n\n'+sigText():'');
-  if(msConnected&&msAccount){
-    try{
-      const tpl=getHtmlTemplate(c.tier,c.templateUsed);
-      const htmlContent=tpl?applyHtmlTemplate(tpl.html,c,activeBody,subj):null;
-      await sendViaGraph(c.workEmail,subj,full,htmlContent);
-      updateC(selectedQueueId,{emailSent:true,approved:true,emailBody:full,subjectLine:subj,sequenceStep:1});
-      toast('Sent via Outlook','green');
-    }catch(e){document.getElementById('err-display').innerHTML=`<div class="err-box">Send failed: ${e.message}</div>`;return;}
-  }else{
+  const st=sigText();
+  const full=activeBody+(st?'\n\n'+st:'');
+  const tpl=getHtmlTemplate(c.tier,c.templateUsed);
+  const htmlContent=tpl?applyHtmlTemplate(tpl.html,c,activeBody,subj):null;
+  const errEl=document.getElementById('err-display');
+  errEl.innerHTML='<div style="padding:8px;color:var(--muted);font-size:12px">Sending via Gmail...</div>';
+  try{
+    const r=await fetch('/api/send',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({to:c.workEmail,subject:subj,body:full,html:htmlContent})
+    });
+    if(!r.ok){
+      const err=await r.json().catch(()=>({detail:'Send failed'}));
+      errEl.innerHTML='<div class="err-box">'+( err.detail||'Send failed')+'</div>';
+      return;
+    }
     updateC(selectedQueueId,{emailSent:true,approved:true,emailBody:full,subjectLine:subj,sequenceStep:1});
-    toast('Marked sent. Connect Outlook to send directly.','amber');
+    errEl.innerHTML='';
+    toast('Sent via Gmail ✓','green');
+  }catch(e){
+    errEl.innerHTML='<div class="err-box">Network error: '+e.message+'</div>';
+    return;
   }
   const sentContact=getC(selectedQueueId);
   advanceQueue();
@@ -1629,19 +1641,29 @@ function openSeqOutlook(contactId,step){
   window.open(`mailto:${c.workEmail}?subject=${encodeURIComponent(email.subject)}&body=${encodeURIComponent(email.body+(st?'\n\n'+st:''))}`);
 }
 async function sendSeqStep(contactId,step){
-  const c=getC(contactId);if(!c)return;const email=getSeqEmail(contactId,step);
-  const st=sigText();const full=email.body+(st?'\n\n'+st:'');
-  if(msConnected&&msAccount){
-    try{
-      const tpl=getHtmlTemplate(c.tier,c.templateUsed);
-      const htmlContent=tpl?applyHtmlTemplate(tpl.html,c,email.body,email.subject):null;
-      await sendViaGraph(c.workEmail,email.subject,full,htmlContent);
-      updateC(contactId,{emailSent:true,sequenceStep:step+1});
-      toast('Sent via Outlook','green');
-    }catch(e){toast('Send failed: '+e.message,'amber');return;}
-  }else{
+  const c=getC(contactId);if(!c)return;
+  const email=getSeqEmail(contactId,step);
+  const st=sigText();
+  const full=email.body+(st?'\n\n'+st:'');
+  const tpl=getHtmlTemplate(c.tier,c.templateUsed);
+  const htmlContent=tpl?applyHtmlTemplate(tpl.html,c,email.body,email.subject):null;
+  toast('Sending...','blue');
+  try{
+    const r=await fetch('/api/send',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({to:c.workEmail,subject:email.subject,body:full,html:htmlContent})
+    });
+    if(!r.ok){
+      const err=await r.json().catch(()=>({detail:'Send failed'}));
+      toast((err.detail||'Send failed'),'amber');
+      return;
+    }
     updateC(contactId,{emailSent:true,sequenceStep:step+1});
-    toast('Marked sent. Connect Outlook to send directly.','amber');
+    toast('Sent via Gmail ✓','green');
+  }catch(e){
+    toast('Network error: '+e.message,'amber');
+    return;
   }
   renderSeqEditorBody(contactId);renderSeqStudio();
   const sc=getC(contactId);

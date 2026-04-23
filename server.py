@@ -330,6 +330,47 @@ async def post_state(request: Request):
     write_state(body)
     return {"ok": True, "savedAt": body.get("savedAt")}
 
+# ── Send email ────────────────────────────────────────────────────────────
+
+@app.post("/api/send")
+async def api_send(request: Request):
+    """
+    Sends an email via Gmail API using the agent's credentials.
+    Called by the frontend Send button — no Microsoft OAuth needed.
+    """
+    if not is_authenticated(request):
+        raise HTTPException(status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    to       = body.get("to", "").strip()
+    subject  = body.get("subject", "").strip()
+    text     = body.get("body", "").strip()
+    html     = body.get("html") or None
+
+    if not to or not subject or not text:
+        raise HTTPException(status_code=400, detail="to, subject, and body are required")
+
+    try:
+        # Import here so a missing token doesn't break server startup
+        import sys, os
+        sys.path.insert(0, str(ROOT / "agent"))
+        from graph_client import GraphClient  # type: ignore
+        graph = GraphClient()
+        graph.send_email(to=to, subject=subject, body=text, html=html)
+        log.info(f"Sent via Gmail API: {to} — {subject!r}")
+        return {"ok": True}
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=503,
+            detail="Gmail not connected. Run agent/auth.py and set TOKEN_GOOGLE_JSON in Railway."
+        )
+    except Exception as e:
+        log.error(f"Gmail send error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ── Alerts ────────────────────────────────────────────────────────────────
 
 @app.get("/api/alerts")
