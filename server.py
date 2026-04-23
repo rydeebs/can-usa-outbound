@@ -322,19 +322,6 @@ async def post_state(request: Request):
     write_state(body)
     return {"ok": True, "savedAt": body.get("savedAt")}
 
-# ── Debug (shows which DB env vars Railway has set) ───────────────────────
-@app.get("/debug-env")
-async def debug_env():
-    """Shows DB-related env vars so you can confirm which name Railway is using."""
-    db_vars = {k: (v[:30]+"..." if v and len(v)>30 else v)
-               for k, v in os.environ.items()
-               if any(x in k.upper() for x in ["DATABASE","POSTGRES","PG","PGHOST"])}
-    return {
-        "db_vars_found": db_vars,
-        "DATABASE_URL_resolved": bool(DATABASE_URL),
-        "DATABASE_URL_prefix": DATABASE_URL[:30]+"..." if DATABASE_URL else None
-    }
-
 # ── Health ─────────────────────────────────────────────────────────────────
 @app.get("/health")
 async def health():
