@@ -202,6 +202,10 @@ async def _agent_loop() -> None:
     log.info(f"Agent: polling every {POLL_INTERVAL // 60} min.")
     while True:
         try:
+            import sys
+            agent_dir = str(ROOT / "agent")
+            if agent_dir not in sys.path:
+                sys.path.insert(0, agent_dir)
             from agent.main import check_inbox  # type: ignore
             log.info("Agent: checking inbox...")
             await asyncio.get_event_loop().run_in_executor(None, check_inbox)
@@ -355,8 +359,10 @@ async def api_send(request: Request):
 
     try:
         # Import here so a missing token doesn't break server startup
-        import sys, os
-        sys.path.insert(0, str(ROOT / "agent"))
+        import sys
+        agent_dir = str(ROOT / "agent")
+        if agent_dir not in sys.path:
+            sys.path.insert(0, agent_dir)
         from graph_client import GraphClient  # type: ignore
         graph = GraphClient()
         graph.send_email(to=to, subject=subject, body=text, html=html)
