@@ -205,6 +205,20 @@ tr:hover td{background:rgba(255,255,255,0.02)}
 .toast-blue{background:var(--blue-bg);color:var(--blue);border:1px solid rgba(77,142,200,0.3)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin{display:inline-block;animation:spin .8s linear infinite}
+/* ALERT PANEL */
+.alert-btn{position:relative;background:transparent;border:none;cursor:pointer;padding:6px;display:flex;align-items:center;justify-content:center;border-radius:6px;transition:background .12s}
+.alert-btn:hover{background:rgba(255,255,255,0.07)}
+.alert-dot{position:absolute;top:4px;right:4px;width:8px;height:8px;background:#C05050;border-radius:50%;border:2px solid var(--sidebar);display:none}
+.alert-dot.show{display:block}
+.alert-panel{position:fixed;top:44px;right:0;width:360px;height:calc(100vh - 44px);background:var(--sidebar);border-left:1px solid var(--border2);z-index:600;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .22s ease}
+.alert-panel.open{transform:translateX(0)}
+.alert-panel-hdr{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
+.alert-card{padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:default}
+.alert-card.unread{background:rgba(255,255,255,0.02)}
+.alert-card:hover{background:rgba(255,255,255,0.04)}
+.alert-type-hot{color:#2EB86A;font-size:11px;font-weight:600}
+.alert-type-risk{color:#C05050;font-size:11px;font-weight:600}
+.alert-type-inbound{color:#4D8EC8;font-size:11px;font-weight:600}
 /* LINKEDIN MODAL */
 .li-modal-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:500;align-items:center;justify-content:center}
 .li-modal-backdrop.open{display:flex}
@@ -256,10 +270,16 @@ tr:hover td{background:rgba(255,255,255,0.02)}
   <button id="nav-seqstudio" class="nav-btn" onclick="showView('seqstudio')">Sequence Studio</button>
   <button id="nav-bulk" class="nav-btn" onclick="showView('bulk')">Bulk actions</button>
   <button id="nav-settings" class="nav-btn" onclick="showView('settings')">Settings</button>
+  <button id="nav-alerts" class="nav-btn" onclick="showView('alerts')">Alerts <span id="alerts-badge" class="nav-badge" style="display:none;background:#C05050"></span></button>
   <div style="flex:1"></div>
   <span id="hot-alert" style="display:none;font-size:11px;color:var(--red);background:var(--red-bg);padding:4px 10px;border-radius:20px;border:1px solid rgba(192,80,80,0.2);margin-right:10px"></span>
   <span id="save-status" style="font-size:11px;color:var(--dim);margin-right:12px"></span>
   <span style="font-size:11px;color:var(--dim)">Pawel &nbsp;·&nbsp; <span style="color:var(--muted)">CAN USA</span></span>
+  <!-- Alert bell -->
+  <button class="alert-btn" id="alert-bell" onclick="toggleAlertPanel()" title="Alerts">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+    <div class="alert-dot" id="alert-dot"></div>
+  </button>
   <button class="btn" style="font-size:11px;padding:4px 10px;margin-left:8px;color:var(--dim)" onclick="doLogout()">Sign out</button>
 </div>
 
@@ -576,6 +596,36 @@ tr:hover td{background:rgba(255,255,255,0.02)}
   </div>
 </div>
 
+<!-- ═══ ALERTS ═══ -->
+<div id="view-alerts" class="view">
+  <div class="topbar">
+    <span class="topbar-title" style="flex:1">Alerts</span>
+    <div class="sub-tabs">
+      <button class="sub-tab active" id="atab-all"     onclick="setAlertTab('all')">All</button>
+      <button class="sub-tab"        id="atab-hot"     onclick="setAlertTab('hot')">🟢 Hot leads</button>
+      <button class="sub-tab"        id="atab-risk"    onclick="setAlertTab('risk')">🔴 At risk</button>
+      <button class="sub-tab"        id="atab-inbound" onclick="setAlertTab('inbound')">📬 Inbound</button>
+    </div>
+    <div style="flex:1"></div>
+    <button class="btn" onclick="markAlertsRead();renderAlertsView()">Mark all read</button>
+  </div>
+  <div class="scroll" style="padding:16px" id="alerts-tab-body">
+    <div style="text-align:center;padding:60px;color:var(--dim);font-size:13px">Loading alerts...</div>
+  </div>
+</div>
+
+<!-- ALERT PANEL -->
+<div class="alert-panel" id="alert-panel">
+  <div class="alert-panel-hdr">
+    <span style="font-weight:600;font-size:14px;color:var(--text);flex:1">Alerts</span>
+    <button class="btn" style="font-size:11px;padding:3px 9px" onclick="markAlertsRead()">Mark all read</button>
+    <button class="btn" style="font-size:11px;padding:3px 9px;margin-left:4px" onclick="toggleAlertPanel()">Close</button>
+  </div>
+  <div style="flex:1;overflow-y:auto" id="alert-list">
+    <div style="padding:40px 20px;text-align:center;color:var(--dim);font-size:13px">No alerts yet</div>
+  </div>
+</div>
+
 <!-- LINKEDIN CONNECTION MODAL -->
 <div class="li-modal-backdrop" id="li-modal-backdrop">
   <div class="li-modal">
@@ -832,6 +882,7 @@ function showView(v){
   if(v==='seqstudio')renderSeqStudio();
   if(v==='bulk')updateBulkCount();
   if(v==='settings')renderTracking();
+  if(v==='alerts'){renderAlertsView();}
   updateGlobals();
 }
 
@@ -2182,13 +2233,197 @@ function getLinkedInPending(){
 // ══════════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════
+// ALERT SYSTEM
+// ══════════════════════════════════════════════════════════════════
+let _alertPanelOpen=false, _alertTab='all', _allAlerts=[];
+
+function toggleAlertPanel(){
+  _alertPanelOpen=!_alertPanelOpen;
+  const panel=document.getElementById('alert-panel');
+  if(_alertPanelOpen){panel.classList.add('open');loadAlerts();}
+  else panel.classList.remove('open');
+}
+
+function setAlertTab(tab){
+  _alertTab=tab;
+  ['all','hot','risk','inbound'].forEach(t=>{
+    const btn=document.getElementById('atab-'+t);
+    if(btn)btn.classList.toggle('active',t===tab);
+  });
+  renderAlertsView();
+}
+
+async function loadAlerts(){
+  try{
+    const r=await fetch('/api/alerts');
+    if(!r.ok)return;
+    const data=await r.json();
+    _allAlerts=data.alerts||[];
+    updateAlertIndicators(data.unread||0);
+    renderAlertsView();
+    // Also render the side panel if open
+    const panelList=document.getElementById('alert-list');
+    if(panelList)_renderAlertCards(panelList,_allAlerts.slice(0,5));
+  }catch(e){console.warn('Alerts fetch failed:',e);}
+}
+
+function renderAlertsView(){
+  const el=document.getElementById('alerts-tab-body');if(!el)return;
+  const filtered=_allAlerts.filter(a=>{
+    if(_alertTab==='all')return true;
+    if(_alertTab==='hot')return a.type==='HOT_LEAD';
+    if(_alertTab==='risk')return a.type==='AT_RISK';
+    if(_alertTab==='inbound')return a.type==='NEW_INBOUND';
+    return true;
+  });
+  if(!filtered.length){
+    el.innerHTML='<div style="text-align:center;padding:60px;color:var(--dim);font-size:13px">No alerts in this category yet.</div>';
+    return;
+  }
+  _renderAlertCards(el,filtered,true);
+}
+
+function _renderAlertCards(el,alerts,showActions){
+  el.innerHTML=alerts.map(a=>{
+    const isHot=a.type==='HOT_LEAD', isRisk=a.type==='AT_RISK', isInbound=a.type==='NEW_INBOUND';
+    const typeCls=isHot?'alert-type-hot':isRisk?'alert-type-risk':'alert-type-inbound';
+    const typeLabel=isHot?'🟢 Hot lead':isRisk?'🔴 At risk':'📬 New inbound';
+    const dt=new Date(a.timestamp);
+    const timeStr=dt.toLocaleDateString([],{month:'short',day:'numeric'})+' '+dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    const c=a.contact||{};
+    const existingContact=c.isExisting?badge('b-t'+(c.tier||3),'Existing'):'';
+    const newTag=c.isNew?'<span class="badge" style="background:rgba(77,142,200,0.15);color:var(--blue);border:1px solid rgba(77,142,200,0.3)">(New)</span>':'';
+
+    let actions='';
+    if(showActions){
+      if(isInbound&&c.isNew&&c.email){
+        const _eid=encodeURIComponent(a.id||'');
+        const _em1=encodeURIComponent(c.email||'');
+        actions='<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'
+          +'<button class="btn btn-green" style="font-size:11px" onclick="addInboundContact(decodeURIComponent(\'' +_eid+ '\'))">+ Add to contacts</button>'
+          +'<button class="btn" style="font-size:11px" onclick="copyToClipboard(decodeURIComponent(\'' +_em1+ '\'))">Copy email</button>'
+          +'</div>';
+      }
+      if(isInbound&&c.isExisting){
+        const _em2=encodeURIComponent(c.email||'');
+        actions='<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'
+          +'<button class="btn btn-amber" style="font-size:11px" onclick="openInboundFlow(decodeURIComponent(\'' +_em2+ '\'))">View contact + reply</button>'
+          +'</div>';
+      }
+      if(isHot){
+        const _em3=encodeURIComponent(c.email||'');
+        actions='<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'
+          +'<button class="btn btn-solid" style="font-size:11px" onclick="openContactFromEmail(decodeURIComponent(\'' +_em3+ '\'))">View in queue</button>'
+          +'</div>';
+      }
+    }
+
+    return '<div class="alert-card'+(a.read?'':' unread')+'" style="'+(showActions?'border-radius:8px;margin-bottom:10px;border:1px solid var(--border);':'')+'">'
+      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">'
+      +'<span class="'+typeCls+'">'+typeLabel+'</span>'
+      +existingContact+newTag
+      +'<span style="flex:1"></span>'
+      +'<span style="font-size:10px;color:var(--dim)">'+timeStr+'</span>'
+      +'</div>'
+      +'<div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:3px">'+esc(a.title||'')+'</div>'
+      +(c.name||c.firm?'<div style="font-size:11px;color:var(--muted);margin-bottom:4px">'+esc(c.name||'')+(c.firm?' &middot; '+esc(c.firm):'')+(c.email?' &middot; <span style="color:var(--dim)">'+esc(c.email)+'</span>':'')+'</div>':'')
+      +(a.subject?'<div style="font-size:11px;color:var(--dim);margin-bottom:3px">Subject: '+esc(a.subject)+'</div>':'')
+      +(a.detail?'<div style="font-size:11px;color:var(--dim);line-height:1.5;white-space:pre-wrap">'+esc(a.detail.slice(0,200))+'</div>':'')
+      +actions
+      +'</div>';
+  }).join('');
+}
+
+function updateAlertIndicators(count){
+  // Bell dot
+  const dot=document.getElementById('alert-dot');
+  if(dot)dot.classList.toggle('show',count>0);
+  // Nav badge
+  const badge2=document.getElementById('alerts-badge');
+  if(badge2){
+    if(count>0){badge2.style.display='inline';badge2.textContent=count;}
+    else badge2.style.display='none';
+  }
+}
+
+async function markAlertsRead(){
+  try{
+    await fetch('/api/alerts/read',{method:'POST'});
+    updateAlertIndicators(0);
+    _allAlerts=_allAlerts.map(a=>({...a,read:true}));
+    renderAlertsView();
+  }catch(e){}
+}
+
+function addInboundContact(alertId){
+  const a=_allAlerts.find(x=>x.id===alertId);
+  if(!a||!a.contact)return;
+  const c=a.contact;
+  const newContact={
+    id:Date.now(),
+    firstName:c.name?c.name.split(' ')[0]:'',
+    lastName:c.name&&c.name.includes(' ')?c.name.split(' ').slice(1).join(' '):'',
+    fullName:c.name||'',
+    jobTitle:'',
+    workEmail:c.email||'',
+    firmName:c.firm||'',
+    tier:3,
+    totalUnfiled:0,sub10A:0,sub10B:0,sub10C:0,wPriorSWARM:0,
+    pitchAnchor:'Inbound enquiry',
+    notes:'Added from inbound alert — '+new Date().toLocaleDateString(),
+    templateUsed:'B',subjectLine:'',emailBody:'',
+    linkedinUrl:'',linkedinConnected:false,
+    emailSent:false,opened:false,replied:false,bounced:false,
+    sequenceStep:0,approved:false,paused:false,refined:false,
+    isInbound:true,inboundSource:'alert'
+  };
+  contacts.push(newContact);
+  save();updateGlobals();
+  toast('Contact added — '+c.name+'. Update their firm/tier in Contacts tab.','green');
+  showView('contacts');
+}
+
+function openInboundFlow(email){
+  const c=contacts.find(x=>(x.workEmail||'').toLowerCase()===email.toLowerCase());
+  if(c){selectedQueueId=c.id;showView('queue');}
+  else toast('Contact not found','amber');
+}
+
+function openContactFromEmail(email){
+  const c=contacts.find(x=>(x.workEmail||'').toLowerCase()===email.toLowerCase());
+  if(c){selectedQueueId=c.id;showView('queue');}
+  else toast('Contact not found','amber');
+}
+
+function copyToClipboard(text){
+  navigator.clipboard.writeText(text).then(()=>toast('Copied: '+text,'blue'));
+}
+
+function startAlertPolling(){
+  setInterval(async()=>{
+    try{
+      const r=await fetch('/api/alerts');
+      if(!r.ok)return;
+      const data=await r.json();
+      _allAlerts=data.alerts||[];
+      updateAlertIndicators(data.unread||0);
+      const panelList=document.getElementById('alert-list');
+      if(panelList&&_alertPanelOpen)_renderAlertCards(panelList,_allAlerts.slice(0,5));
+    }catch(e){}
+  },60000);
+}
+
+// ══════════════════════════════════════════════════════════════════
 // Async init - load state from server then render
 (async()=>{
   await load();
   showView('dashboard');
   renderTracking();
   updateGlobals();
-  startAutoRefresh(); // poll server every 30s for changes from other browsers
+  startAutoRefresh();   // poll server every 30s for state changes
+  startAlertPolling();  // poll server every 60s for new alerts
+  loadAlerts();         // load alerts immediately on startup
 })();
 </script>
 </body>

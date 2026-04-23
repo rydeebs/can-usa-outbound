@@ -143,8 +143,8 @@ class GraphClient:
         results = []
         for msg in data.get("value", []):
             subject = msg.get("subject", "")
-            if not subject.lower().startswith("re:"):
-                continue
+            # Process ALL unread mail — alerter.py decides what to do with
+            # non-reply subjects (new inbound detection)
             from_addr = (
                 msg.get("from", {}).get("emailAddress", {})
                    .get("address", "").lower().strip()

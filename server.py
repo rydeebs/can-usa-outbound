@@ -322,6 +322,32 @@ async def post_state(request: Request):
     write_state(body)
     return {"ok": True, "savedAt": body.get("savedAt")}
 
+# ── Alerts ────────────────────────────────────────────────────────────────
+
+@app.get("/api/alerts")
+async def get_alerts(request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(status_code=401)
+    try:
+        from agent.alerter import get_alerts, get_unread_count  # type: ignore
+        return JSONResponse({
+            "alerts": get_alerts(50),
+            "unread": get_unread_count()
+        })
+    except ImportError:
+        return JSONResponse({"alerts": [], "unread": 0})
+
+@app.post("/api/alerts/read")
+async def mark_alerts_read(request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(status_code=401)
+    try:
+        from agent.alerter import mark_all_read  # type: ignore
+        mark_all_read()
+    except ImportError:
+        pass
+    return {"ok": True}
+
 # ── Health ─────────────────────────────────────────────────────────────────
 @app.get("/health")
 async def health():
