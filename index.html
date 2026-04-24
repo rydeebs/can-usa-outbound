@@ -676,6 +676,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
       <button class="sub-tab"        id="atab-hot"     onclick="setAlertTab('hot')">🟢 Hot leads</button>
       <button class="sub-tab"        id="atab-risk"    onclick="setAlertTab('risk')">🔴 At risk</button>
       <button class="sub-tab"        id="atab-inbound" onclick="setAlertTab('inbound')">📬 Inbound</button>
+      <button class="sub-tab"        id="atab-bounce"  onclick="setAlertTab('bounce')">⚠️ Bounced</button>
     </div>
     <div style="flex:1"></div>
     <button class="btn" onclick="markAlertsRead();renderAlertsView()">Mark all read</button>
@@ -2431,11 +2432,12 @@ function toggleAlertPanel(){
 
 function setAlertTab(tab){
   _alertTab=tab;
-  ['all','hot','risk','inbound'].forEach(t=>{
+  ['all','hot','risk','inbound','bounce'].forEach(t=>{
     const btn=document.getElementById('atab-'+t);
     if(btn)btn.classList.toggle('active',t===tab);
   });
-  renderAlertsView();
+  if(tab==='bounce'){renderBouncedView();}
+  else{renderAlertsView();}
 }
 
 async function loadAlerts(){
@@ -2455,10 +2457,11 @@ async function loadAlerts(){
 function renderAlertsView(){
   const el=document.getElementById('alerts-tab-body');if(!el)return;
   const filtered=_allAlerts.filter(a=>{
-    if(_alertTab==='all')return true;
+    if(_alertTab==='all')return a.type!=='BOUNCE';
     if(_alertTab==='hot')return a.type==='HOT_LEAD';
     if(_alertTab==='risk')return a.type==='AT_RISK';
     if(_alertTab==='inbound')return a.type==='NEW_INBOUND';
+    if(_alertTab==='bounce')return a.type==='BOUNCE';
     return true;
   });
   if(!filtered.length){
@@ -2582,6 +2585,45 @@ function openContactFromEmail(email){
 
 function copyToClipboard(text){
   navigator.clipboard.writeText(text).then(()=>toast('Copied: '+text,'blue'));
+}
+
+function renderBouncedView(){
+  const el=document.getElementById('alerts-tab-body');if(!el)return;
+  el.innerHTML='<div style="text-align:center;padding:40px;color:var(--dim);font-size:13px">Loading bounced contacts...</div>';
+  fetch('/api/bounces')
+    .then(r=>r.json())
+    .then(data=>{
+      const bounces=data.bounces||[];
+      if(!bounces.length){
+        el.innerHTML='<div style="text-align:center;padding:60px;color:var(--dim);font-size:13px">No bounced contacts yet.<br/><span style="font-size:11px;margin-top:6px;display:block">When the agent detects a delivery failure from mailer-daemon, the contact is automatically removed and logged here.</span></div>';
+        return;
+      }
+      el.innerHTML='<div style="margin-bottom:14px;padding:10px 14px;background:var(--surface);border-radius:8px;border:1px solid var(--border)">'
+        +'<div style="font-size:12px;color:var(--muted);line-height:1.6">'
+        +'<strong style="color:var(--text)">'+bounces.length+' bounced contacts</strong> — removed from your contacts list and excluded from all future sends. '
+        +'These email addresses were confirmed invalid by Gmail delivery system.'
+        +'</div></div>'
+        +bounces.map(b=>{
+          const dt=new Date(b.bounced_at);
+          const timeStr=dt.toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'})+' '+dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+          const tierBadge=b.tier?badge('b-t'+b.tier,'T'+b.tier):'';
+          return '<div class="alert-card" style="border-radius:8px;margin-bottom:8px;border:1px solid rgba(192,80,80,0.2);background:rgba(192,80,80,0.04)">'
+            +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">'
+            +'<span style="font-size:11px;font-weight:600;color:var(--red)">⚠️ Hard bounce — removed</span>'
+            +tierBadge
+            +'<span style="flex:1"></span>'
+            +'<span style="font-size:10px;color:var(--dim)">'+timeStr+'</span>'
+            +'</div>'
+            +'<div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:2px">'+esc(b.full_name||'')+'</div>'
+            +'<div style="font-size:12px;color:var(--muted);margin-bottom:3px">'+esc(b.firm_name||'')+'</div>'
+            +'<div style="font-size:11px;color:var(--dim);font-family:Menlo,monospace">'+esc(b.email||'')+'</div>'
+            +(b.bounce_reason?'<div style="font-size:10px;color:var(--dim);margin-top:4px;line-height:1.5;font-style:italic">'+esc(b.bounce_reason.slice(0,120))+'</div>':'')
+            +'</div>';
+        }).join('');
+    })
+    .catch(e=>{
+      el.innerHTML='<div style="text-align:center;padding:40px;color:var(--red);font-size:13px">Failed to load bounced contacts: '+e.message+'</div>';
+    });
 }
 
 function startAlertPolling(){

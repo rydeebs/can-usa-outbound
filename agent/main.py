@@ -43,6 +43,7 @@ from contact_store import ContactStore
 from sequence_engine import SequenceEngine
 from template_engine import TemplateEngine
 from alerter import check_hot_lead, check_at_risk, check_new_inbound
+from bouncer import handle_bounce, _init_bounces_table
 
 AUTO_SEND    = os.getenv("AUTO_SEND", "false").lower() == "true"
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL_MINUTES", "15"))
@@ -169,6 +170,7 @@ def process_reply(
 def check_inbox() -> None:
     """Called on schedule. Fetches all unread mail and processes each."""
     log.info("Polling inbox...")
+    _init_bounces_table()
     graph  = GraphClient()
     store  = ContactStore()
     engine = SequenceEngine(store)
@@ -184,6 +186,13 @@ def check_inbox() -> None:
 
     for reply in replies:
         try:
+            # Check for bounce/delivery failure notifications FIRST
+            bounced = handle_bounce(reply, store, graph)
+            if bounced:
+                log.info(f"Bounce handled for {bounced} — skipping normal processing")
+                graph.mark_as_read(reply["message_id"])
+                continue
+
             process_reply(graph, store, engine, tpl, reply, all_contacts)
             graph.mark_as_read(reply["message_id"])
         except Exception as e:

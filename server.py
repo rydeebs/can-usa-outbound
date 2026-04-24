@@ -386,6 +386,14 @@ async def lifespan(app: FastAPI):
     if DATABASE_URL:
         _init_db()
         _init_tracking_table()
+        # Init bounces table via bouncer module
+        try:
+            import sys
+            sys.path.insert(0, str(ROOT / "agent"))
+            from bouncer import _init_bounces_table  # type: ignore
+            _init_bounces_table()
+        except Exception as e:
+            log.warning(f"Bounces table init: {e}")
     _bootstrap_token_cache()
     task = asyncio.create_task(_agent_loop())
     log.info("Server ready.")
@@ -529,6 +537,29 @@ async def api_send(request: Request):
     except Exception as e:
         log.error(f"Gmail send error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+# ── Bounced contacts ──────────────────────────────────────────────────────
+
+@app.get("/api/bounces")
+async def get_bounces(request: Request):
+    """Returns list of hard-bounced contacts removed from the system."""
+    if not is_authenticated(request):
+        raise HTTPException(status_code=401)
+    try:
+        import sys
+        agent_dir = str(ROOT / "agent")
+        if agent_dir not in sys.path:
+            sys.path.insert(0, agent_dir)
+        from bouncer import _get_bounces  # type: ignore
+        bounces = _get_bounces(200)
+        # Convert datetime objects to strings for JSON serialization
+        for b in bounces:
+            if hasattr(b.get("bounced_at"), "isoformat"):
+                b["bounced_at"] = b["bounced_at"].isoformat()
+        return JSONResponse({"bounces": bounces, "total": len(bounces)})
+    except Exception as e:
+        log.error(f"Bounces fetch error: {e}")
+        return JSONResponse({"bounces": [], "total": 0})
 
 # ── Alerts ────────────────────────────────────────────────────────────────
 
