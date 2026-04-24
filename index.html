@@ -1008,7 +1008,7 @@ function renderContacts(){
       if(fs==='opened')return c.opened;
       if(fs==='replied')return c.replied;
       if(fs==='empty')return!c.emailSent&&(!c.emailBody||!c.emailBody.trim()||!c.subjectLine||!c.subjectLine.trim());
-      if(fs==='unknown')return/<unknown>/i.test(c.subjectLine||'')||/<unknown>/i.test(c.emailBody||'');
+      if(fs==='unknown')return hasUnknown(c.subjectLine)||hasUnknown(c.emailBody);
       return true;
     })
     .filter(c=>!s||`${c.firstName} ${c.lastName} ${c.firmName}`.toLowerCase().includes(s))
@@ -1552,7 +1552,7 @@ function getQueueFiltered(){
       if(fh==='hot')return c.wPriorSWARM>50;
       if(fh==='refined')return c.refined;
       if(fh==='empty')return(!c.emailBody||!c.emailBody.trim()||!c.subjectLine||!c.subjectLine.trim());
-      if(fh==='unknown')return/<unknown>/i.test(c.subjectLine||'')||/<unknown>/i.test(c.emailBody||'');
+      if(fh==='unknown')return hasUnknown(c.subjectLine)||hasUnknown(c.emailBody);
       return true;
     })
     .filter(c=>ff==='all'||c.firmName===ff)
@@ -1572,7 +1572,7 @@ function getQueueBulkFiltered(){
       if(fh==='all')return true;
       if(fh==='hot')return c.wPriorSWARM>50;
       if(fh==='empty')return(!c.emailBody||!c.emailBody.trim()||!c.subjectLine||!c.subjectLine.trim());
-      if(fh==='unknown')return/<unknown>/i.test(c.subjectLine||'')||/<unknown>/i.test(c.emailBody||'');
+      if(fh==='unknown')return hasUnknown(c.subjectLine)||hasUnknown(c.emailBody);
       return true;
     })
     .filter(c=>ff==='all'||c.firmName===ff)
@@ -2752,7 +2752,12 @@ function applyCleanSignoffs() {
 // ── Unknown placeholder cleaner ───────────────────────────────────────────
 
 function hasUnknown(str) {
-  return /<unknown>/i.test(str || '');
+  if (!str) return false;
+  // Catch: <unknown>, &lt;unknown&gt;, [unknown], (unknown) as standalone word
+  return /<unknown>/i.test(str) ||
+         /&lt;unknown&gt;/i.test(str) ||
+         /\[unknown\]/i.test(str) ||
+         /\bunknown\b/i.test(str);
 }
 
 function stripUnknown(str) {
@@ -2767,7 +2772,7 @@ function stripUnknown(str) {
 
 function previewUnknown() {
   const affected = contacts.filter(c =>
-    hasUnknown(c.subjectLine) || hasUnknown(c.emailBody)
+    hasUnknown(c.subjectLine) || hasUnknown(c.emailBody) || hasUnknown(c.refinedEmailBody)
   );
   const el = document.getElementById('unknown-preview');
   const btn = document.getElementById('btn-apply-unknown');
@@ -2802,21 +2807,22 @@ function previewUnknown() {
 
 function applyUnknownFix() {
   const affected = contacts.filter(c =>
-    hasUnknown(c.subjectLine) || hasUnknown(c.emailBody)
+    hasUnknown(c.subjectLine) || hasUnknown(c.emailBody) || hasUnknown(c.refinedEmailBody)
   );
   if (!affected.length) { toast('Nothing to fix','amber'); return; }
   if (!confirm('Clear <unknown> from ' + affected.length + ' contacts?')) return;
 
   contacts = contacts.map(c => {
-    const fixSubject = hasUnknown(c.subjectLine);
-    const fixBody    = hasUnknown(c.emailBody);
-    if (!fixSubject && !fixBody) return c;
+    const fixSubject  = hasUnknown(c.subjectLine);
+    const fixBody     = hasUnknown(c.emailBody);
+    const fixRefined  = hasUnknown(c.refinedEmailBody);
+    if (!fixSubject && !fixBody && !fixRefined) return c;
     return {
       ...c,
       subjectLine:      fixSubject ? '' : c.subjectLine,
       emailBody:        fixBody    ? '' : c.emailBody,
-      refinedEmailBody: fixBody    ? null : c.refinedEmailBody,
-      refined:          fixBody    ? false : c.refined,
+      refinedEmailBody: (fixBody || fixRefined) ? null : c.refinedEmailBody,
+      refined:          (fixBody || fixRefined) ? false : c.refined,
     };
   });
 
@@ -2835,30 +2841,34 @@ function applyUnknownFix() {
 // When found: clear the entire emailBody and subjectLine so it gets
 // rewritten from scratch via "Refine with Claude" or manual editing.
 const BAD_OPENING_PATTERNS = [
-  /^hi [a-z]+,?\s*\ni came across can usa/i,
-  /^i came across can usa/i,
-  /^i recently came across can usa/i,
-  /^i found can usa/i,
-  /^i discovered can usa/i,
-  /^i learned about can usa/i,
-  /^i heard about can usa/i,
-  /^i saw can usa/i,
-  /^i noticed can usa/i,
-  /^your company can usa/i,
-  /^can usa looks like/i,
-  /^can usa seems like/i,
-  /^as a potential client/i,
-  /^as a prospective client/i,
-  /^i am interested in can usa/i,
-  /^i'm reaching out to can usa/i,
-  /^i am reaching out to can usa/i,
-  /^i would like to learn more about can usa/i,
+  /i came across can usa/i,
+  /i recently came across can usa/i,
+  /i found can usa/i,
+  /i discovered can usa/i,
+  /i learned about can usa/i,
+  /i heard about can usa/i,
+  /i noticed can usa/i,
+  /your company can usa/i,
+  /can usa looks like/i,
+  /can usa seems like/i,
+  /as a potential client/i,
+  /as a prospective client/i,
+  /i am interested in can usa/i,
+  /i'?m reaching out to can usa/i,
+  /i am reaching out to can usa/i,
+  /i would like to learn more about can usa/i,
+  /i'?ve been following can usa/i,
+  /i'?ve heard about can usa/i,
+  /impressive work.*can usa/i,
+  /can usa'?s impressive/i,
 ];
 
 function hasBadOpening(body) {
   if (!body) return false;
-  const trimmed = body.trim();
-  return BAD_OPENING_PATTERNS.some(p => p.test(trimmed));
+  // Only check the first 600 chars — the opening paragraphs
+  // Avoids false positives if CAN USA is mentioned correctly later in the email
+  const opening = body.trim().slice(0, 600);
+  return BAD_OPENING_PATTERNS.some(p => p.test(opening));
 }
 
 function previewBadOpenings() {
@@ -2899,13 +2909,15 @@ function previewBadOpenings() {
 }
 
 function applyBadOpeningFix() {
-  const affected = contacts.filter(c => hasBadOpening(c.emailBody));
+  const affected = contacts.filter(c =>
+    hasBadOpening(c.emailBody) || hasBadOpening(c.refinedEmailBody)
+  );
   if (!affected.length) { toast('Nothing to fix', 'amber'); return; }
 
   if(!confirm('Clear email body and subject line for '+affected.length+' contacts? They will be blank — regenerate with Refine with Claude in the Review Queue.'))return;
 
   contacts = contacts.map(c => {
-    if (!hasBadOpening(c.emailBody)) return c;
+    if (!hasBadOpening(c.emailBody) && !hasBadOpening(c.refinedEmailBody)) return c;
     return {
       ...c,
       emailBody: '',
@@ -2923,6 +2935,19 @@ function applyBadOpeningFix() {
   if(previewEl) previewEl.innerHTML = '<span style="color:var(--green)">✓ Cleared ' + affected.length + ' contacts. Use "Refine with Claude" in the Review Queue to regenerate their emails.</span>';
   if(applyBtn)  applyBtn.style.display = 'none';
   toast('Cleared ' + affected.length + ' bad email bodies', 'green');
+}
+
+function forceWipeContact(email){
+  // Hard wipe all email content for a specific contact by email address
+  // Use this when the standard cleaner misses a stubborn contact
+  let found=false;
+  contacts=contacts.map(c=>{
+    if((c.workEmail||'').toLowerCase()!==email.toLowerCase())return c;
+    found=true;
+    return{...c,emailBody:'',subjectLine:'',refinedEmailBody:null,refined:false};
+  });
+  if(found){save();updateGlobals();toast('Wiped content for '+email,'green');}
+  else toast('Contact not found: '+email,'amber');
 }
 
 // ══════════════════════════════════════════════════════════════════
