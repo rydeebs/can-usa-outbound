@@ -504,29 +504,54 @@ async def api_send(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    to       = body.get("to", "").strip()
-    subject  = body.get("subject", "").strip()
-    text     = body.get("body", "").strip()
-    html     = body.get("html") or None
+    to            = body.get("to", "").strip()
+    subject       = body.get("subject", "").strip()
+    text          = body.get("body", "").strip()
+    html_template = body.get("html") or None
+    html_sig      = body.get("htmlSignature") or ""
 
-    if not to or not subject or not text:
-        raise HTTPException(status_code=400, detail="to, subject, and body are required")
+    if not to or not subject:
+        raise HTTPException(status_code=400, detail="to and subject are required")
 
     try:
-        # Import here so a missing token doesn't break server startup
         import sys
         agent_dir = str(ROOT / "agent")
         if agent_dir not in sys.path:
             sys.path.insert(0, agent_dir)
         from graph_client import GraphClient  # type: ignore
         graph = GraphClient()
-        # Generate tracking token for this recipient
+
         contact_id = body.get("contactId", to)
-        token = _generate_token(to, str(contact_id))
-        graph.send_email(
-            to=to, subject=subject, body=text,
-            html=html, tracking_token=token
-        )
+        token      = _generate_token(to, str(contact_id))
+        pixel_url  = f"https://{os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'can-usa-outbound-production.up.railway.app')}/track/open/{token}?e={to}&c={token}"
+        pixel_tag  = f'<img src="{pixel_url}" width="1" height="1" alt="" style="display:none;border:0"/>' 
+
+        if html_template:
+            # HTML template provided — append sig and pixel inside </body>
+            sig_block = f'<div style="margin-top:20px;border-top:1px solid #e8eaed;padding-top:12px">{html_sig}</div>' if html_sig else ""
+            full_html = html_template
+            if "</body>" in full_html:
+                full_html = full_html.replace("</body>", f"{sig_block}{pixel_tag}</body>")
+            else:
+                full_html = full_html + sig_block + pixel_tag
+            graph.send_email(to=to, subject=subject, body=text, html=full_html)
+
+        else:
+            # No HTML template — build HTML from plain text + rich sig + pixel
+            # Convert plain text body to HTML paragraphs
+            paras = text.strip().split("\n\n")
+            body_html = "".join(
+                f'<p style="margin:0 0 14px 0;font-family:Arial,sans-serif;font-size:14px;color:#222;line-height:1.75">{p.replace(chr(10), "<br/>")}</p>'
+                for p in paras if p.strip()
+            )
+            sig_block = f'<div style="margin-top:20px;border-top:1px solid #e8eaed;padding-top:12px">{html_sig}</div>' if html_sig else ""
+            full_html = f"""<html><body style="margin:0;padding:20px;background:#fff">
+{body_html}
+{sig_block}
+{pixel_tag}
+</body></html>"""
+            graph.send_email(to=to, subject=subject, body=text, html=full_html)
+
         log.info(f"Sent via Gmail API: {to} — {subject!r}")
         return {"ok": True, "token": token}
     except FileNotFoundError:

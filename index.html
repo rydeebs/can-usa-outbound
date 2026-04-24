@@ -1313,8 +1313,6 @@ async function doSend(){
   if(!selectedQueueEmail)return;
   const c=getC(selectedQueueEmail);if(!c)return;
   const subj=document.getElementById('review-subject').value;
-  const st=sigText();
-  const full=activeBody+(st?'\n\n'+st:'');
   const tpl=getHtmlTemplate(c.tier,c.templateUsed);
   const htmlContent=tpl?applyHtmlTemplate(tpl.html,c,activeBody,subj):null;
   const errEl=document.getElementById('err-display');
@@ -1323,7 +1321,13 @@ async function doSend(){
     const r=await fetch('/api/send',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({to:c.workEmail,subject:subj,body:full,html:htmlContent})
+      body:JSON.stringify({
+        to:c.workEmail,
+        subject:subj,
+        body:activeBody,           // plain text body only (no sig)
+        html:htmlContent,          // HTML template if available
+        htmlSignature:userSignature // raw HTML sig — server appends this
+      })
     });
     if(!r.ok){
       const err=await r.json().catch(()=>({detail:'Send failed'}));
@@ -1836,8 +1840,6 @@ function openSeqOutlook(contactId,step){
 async function sendSeqStep(contactId,step){
   const c=getC(contactId);if(!c)return;
   const email=getSeqEmail(contactId,step);
-  const st=sigText();
-  const full=email.body+(st?'\n\n'+st:'');
   const tpl=getHtmlTemplate(c.tier,c.templateUsed);
   const htmlContent=tpl?applyHtmlTemplate(tpl.html,c,email.body,email.subject):null;
   toast('Sending...','blue');
@@ -1845,7 +1847,13 @@ async function sendSeqStep(contactId,step){
     const r=await fetch('/api/send',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({to:c.workEmail,subject:email.subject,body:full,html:htmlContent})
+      body:JSON.stringify({
+        to:c.workEmail,
+        subject:email.subject,
+        body:email.body,
+        html:htmlContent,
+        htmlSignature:userSignature
+      })
     });
     if(!r.ok){
       const err=await r.json().catch(()=>({detail:'Send failed'}));
