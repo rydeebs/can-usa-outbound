@@ -2660,6 +2660,13 @@ const SIGNOFF_PATTERNS = [
   /\nCAN USA Arch Designs[\s\S]*/i,
   /\n1-888-[\s\S]*/i,
   /\nPawel Wojcik[\s\S]*/i,
+  /\nPawel,[\s\S]*/i,
+  /\nPawel\n[\s\S]*/i,
+  /\n[-–—]\s*Pawel[\s\S]*/i,
+  /\nSpecial Rigger[\s\S]*/i,
+  /\n[-–—]\s*Special Rigger[\s\S]*/i,
+  /\nCAN USA\s*$/im,
+  /\n[-–—]\s*CAN USA[\s\S]*/i,
 ];
 
 function cleanEmailBody(body) {
