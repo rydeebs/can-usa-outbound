@@ -319,7 +319,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     <input class="inp" id="c-search" placeholder="Search name or firm..." oninput="renderContacts()" style="width:155px"/>
     <select class="inp" id="c-tier" onchange="renderContacts()" style="width:106px"><option value="all">All tiers</option><option value="1">Tier 1</option><option value="2">Tier 2</option><option value="3">Tier 3</option></select>
     <select class="inp" id="c-tpl" onchange="renderContacts()" style="width:120px"><option value="all">All templates</option><option value="A">Template A</option><option value="B">Template B</option><option value="C">Template C</option></select>
-    <select class="inp" id="c-status" onchange="renderContacts()" style="width:120px"><option value="all">All</option><option value="unsent">Unsent</option><option value="sent">Sent</option><option value="opened">Opened</option><option value="replied">Replied</option></select>
+    <select class="inp" id="c-status" onchange="renderContacts()" style="width:130px"><option value="all">All</option><option value="unsent">Unsent</option><option value="sent">Sent</option><option value="opened">Opened</option><option value="replied">Replied</option><option value="empty">Empty subject/body</option><option value="unknown">Has &lt;unknown&gt;</option></select>
   </div>
   <div class="scroll"><table><thead><tr><th>Contact</th><th>Firm</th><th>Tier</th><th style="text-align:right">Unfiled</th><th style="text-align:right">10A</th><th>SWARMP</th><th>Tpl</th><th>Status</th><th>LinkedIn</th><th></th></tr></thead><tbody id="contacts-tbody"></tbody></table></div>
 </div>
@@ -350,9 +350,11 @@ tr:hover td{background:rgba(255,255,255,0.02)}
         <option value="2">Tier 2</option>
         <option value="3">Tier 3</option>
       </select>
-      <select class="inp" id="q-bulk-hot" onchange="renderQueueGroups()" style="width:110px;font-size:12px">
+      <select class="inp" id="q-bulk-hot" onchange="renderQueueGroups()" style="width:140px;font-size:12px">
         <option value="all">All contacts</option>
         <option value="hot">HOT SWARMP only</option>
+        <option value="empty">Empty subject/body</option>
+        <option value="unknown">Has &lt;unknown&gt;</option>
       </select>
       <select class="inp" id="q-bulk-firm" onchange="renderQueueGroups()" style="width:160px;font-size:12px">
         <option value="all">All firms</option>
@@ -380,6 +382,8 @@ tr:hover td{background:rgba(255,255,255,0.02)}
             <option value="all">All</option>
             <option value="hot">HOT</option>
             <option value="refined">Refined</option>
+            <option value="empty">Empty</option>
+            <option value="unknown">&lt;unknown&gt;</option>
           </select>
         </div>
         <select class="inp" id="q-ind-firm" onchange="renderQueueIndividual()" style="width:100%;font-size:10px;padding:3px 5px;margin-top:4px">
@@ -490,6 +494,30 @@ tr:hover td{background:rgba(255,255,255,0.02)}
       </div>
     </div>
     <div class="settings-card">
+      <div style="font-weight:500;color:var(--text);font-size:13px;margin-bottom:4px">Clean email sign-offs</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">
+        Strips everything from "Best Regards", "Best,", "Regards,", "[Your Name]", or similar sign-offs at the end of every contact's email body. Your signature is appended separately when sending — these placeholders should not be in the body.
+      </div>
+      <div id="clean-preview" style="display:none;margin-bottom:10px;padding:10px 12px;background:var(--surface);border-radius:6px;border:1px solid var(--border);font-size:12px;color:var(--muted)"></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-amber" onclick="previewCleanSignoffs()">Preview changes</button>
+        <button class="btn btn-solid" id="btn-apply-clean" style="display:none" onclick="applyCleanSignoffs()">Apply to all contacts</button>
+        <span id="clean-status" style="font-size:12px;color:var(--dim)"></span>
+      </div>
+    </div>
+    <div class="settings-card">
+      <div style="font-weight:500;color:var(--text);font-size:13px;margin-bottom:4px">Fix incorrect email bodies</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">
+        Some Clay-generated emails were written from the wrong perspective — opening with "I came across CAN USA..." as if the contact is writing to you. These need to be cleared and rewritten. This clears the subject line and body for affected contacts so they can be regenerated with "Refine with Claude" in the Review Queue.
+      </div>
+      <div id="bad-opening-preview" style="display:none;margin-bottom:10px;padding:10px 12px;background:var(--surface);border-radius:6px;border:1px solid var(--border);font-size:12px;color:var(--muted)"></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-amber" onclick="previewBadOpenings()">Preview affected contacts</button>
+        <button class="btn" id="btn-apply-bad-opening" style="display:none;background:var(--red-bg);color:var(--red);border-color:rgba(192,80,80,0.3)" onclick="applyBadOpeningFix()">Clear bad emails</button>
+        <span id="bad-opening-status" style="font-size:12px;color:var(--dim)"></span>
+      </div>
+    </div>
+    <div class="settings-card">
       <div style="font-weight:500;color:var(--text);font-size:13px;margin-bottom:4px">Email signature</div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">Appended below every email. Supports rich text, fonts, and a logo image. Rendered as HTML in HTML emails; plain text stripped for clipboard and mailto links.</div>
       <div class="sig-editor-wrap">
@@ -534,6 +562,17 @@ tr:hover td{background:rgba(255,255,255,0.02)}
         </div>
       </div>
       <div style="font-size:11px;color:var(--dim);margin-top:8px;line-height:1.5">Tip: select text first, then click Bold/Italic/color. For font changes, place cursor in a line first. Images are embedded as base64 so they work without a CDN.</div>
+    </div>
+    <div class="settings-card">
+      <div style="font-weight:500;color:var(--text);font-size:13px;margin-bottom:4px">Remove &lt;unknown&gt; placeholders</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">
+        Finds any subject line or email body containing <code style="background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:3px">&lt;unknown&gt;</code> and clears that field so it shows as empty and can be rewritten.
+      </div>
+      <div id="unknown-preview" style="display:none;margin-bottom:10px;padding:10px 12px;background:var(--surface);border-radius:6px;border:1px solid var(--border);font-size:12px;color:var(--muted)"></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-amber" onclick="previewUnknown()">Preview affected</button>
+        <button class="btn" id="btn-apply-unknown" style="display:none;background:var(--red-bg);color:var(--red);border-color:rgba(192,80,80,0.3)" onclick="applyUnknownFix()">Clear &lt;unknown&gt; fields</button>
+      </div>
     </div>
     <div class="settings-card">
       <div style="font-weight:500;color:var(--text);font-size:13px;margin-bottom:10px">Send rate throttle</div>
@@ -967,6 +1006,8 @@ function renderContacts(){
       if(fs==='sent')return c.emailSent;
       if(fs==='opened')return c.opened;
       if(fs==='replied')return c.replied;
+      if(fs==='empty')return!c.emailSent&&(!c.emailBody||!c.emailBody.trim()||!c.subjectLine||!c.subjectLine.trim());
+      if(fs==='unknown')return/<unknown>/i.test(c.subjectLine||'')||/<unknown>/i.test(c.emailBody||'');
       return true;
     })
     .filter(c=>!s||`${c.firstName} ${c.lastName} ${c.firmName}`.toLowerCase().includes(s))
@@ -1505,7 +1546,14 @@ function getQueueFiltered(){
   return contacts
     .filter(c=>!c.emailSent)
     .filter(c=>ft==='all'||String(c.tier)===ft)
-    .filter(c=>fh==='all'||(fh==='hot'&&c.wPriorSWARM>50)||(fh==='refined'&&c.refined))
+    .filter(c=>{
+      if(fh==='all')return true;
+      if(fh==='hot')return c.wPriorSWARM>50;
+      if(fh==='refined')return c.refined;
+      if(fh==='empty')return(!c.emailBody||!c.emailBody.trim()||!c.subjectLine||!c.subjectLine.trim());
+      if(fh==='unknown')return/<unknown>/i.test(c.subjectLine||'')||/<unknown>/i.test(c.emailBody||'');
+      return true;
+    })
     .filter(c=>ff==='all'||c.firmName===ff)
     .filter(c=>!s||`${c.fullName||''} ${c.firstName||''} ${c.lastName||''} ${c.firmName||''}`.toLowerCase().includes(s))
     .sort((a,b)=>a.tier-b.tier||b.totalUnfiled-a.totalUnfiled);
@@ -1519,7 +1567,13 @@ function getQueueBulkFiltered(){
   return contacts
     .filter(c=>!c.emailSent&&!c.approved)
     .filter(c=>ft==='all'||String(c.tier)===ft)
-    .filter(c=>fh==='all'||(fh==='hot'&&c.wPriorSWARM>50))
+    .filter(c=>{
+      if(fh==='all')return true;
+      if(fh==='hot')return c.wPriorSWARM>50;
+      if(fh==='empty')return(!c.emailBody||!c.emailBody.trim()||!c.subjectLine||!c.subjectLine.trim());
+      if(fh==='unknown')return/<unknown>/i.test(c.subjectLine||'')||/<unknown>/i.test(c.emailBody||'');
+      return true;
+    })
     .filter(c=>ff==='all'||c.firmName===ff)
     .filter(c=>!s||`${c.firmName||''}`.toLowerCase().includes(s));
 }
@@ -2542,6 +2596,291 @@ function startAlertPolling(){
       if(panelList&&_alertPanelOpen)_renderAlertCards(panelList,_allAlerts.slice(0,5));
     }catch(e){}
   },60000);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════
+// EMAIL BODY SIGN-OFF CLEANER
+// ══════════════════════════════════════════════════════════════════
+
+// Patterns to strip from the end of email bodies.
+// Everything FROM the matched pattern to the end of the string is removed.
+const SIGNOFF_PATTERNS = [
+  /\nBest[,\s][\s\S]*/i,
+  /\nRegards,[\s\S]*/i,
+  /\nSincerely,[\s\S]*/i,
+  /\nWarmly,[\s\S]*/i,
+  /\nThanks,[\s\S]*/i,
+  /\nThank you,[\s\S]*/i,
+  /\nCheers,[\s\S]*/i,
+  /\n\[Your Name\][\s\S]*/i,
+  /\n\[Name\][\s\S]*/i,
+  /\nCAN USA Arch Designs[\s\S]*/i,
+  /\n1-888-[\s\S]*/i,
+  /\nPawel Wojcik[\s\S]*/i,
+];
+
+function cleanEmailBody(body) {
+  if (!body) return body;
+  let cleaned = body;
+  for (const pattern of SIGNOFF_PATTERNS) {
+    cleaned = cleaned.replace(pattern, '');
+  }
+  return cleaned.trimEnd();
+}
+
+function previewCleanSignoffs() {
+  const affected = contacts.filter(c => {
+    const cleaned = cleanEmailBody(c.emailBody || '');
+    return cleaned !== (c.emailBody || '');
+  });
+
+  const previewEl = document.getElementById('clean-preview');
+  const statusEl  = document.getElementById('clean-status');
+  const applyBtn  = document.getElementById('btn-apply-clean');
+
+  if (!affected.length) {
+    previewEl.style.display = 'block';
+    previewEl.innerHTML = '<span style="color:var(--green)">✓ No sign-offs found — all email bodies are already clean.</span>';
+    if(applyBtn) applyBtn.style.display = 'none';
+    return;
+  }
+
+  // Show first 3 examples
+  const examples = affected.slice(0, 3).map(c => {
+    const cleaned = cleanEmailBody(c.emailBody || '');
+    const stripped = (c.emailBody || '').slice(cleaned.length);
+    return '<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border)">'
+      + '<div style="color:var(--text);font-size:11px;font-weight:500;margin-bottom:3px">'
+      + esc(c.fullName||(c.firstName+' '+c.lastName)) + ' — ' + esc(c.firmName)
+      + '</div>'
+      + '<div style="color:var(--red);font-size:11px;text-decoration:line-through;line-height:1.5">'
+      + esc(stripped.trim().slice(0, 120)) + (stripped.length > 120 ? '...' : '')
+      + '</div>'
+      + '</div>';
+  }).join('');
+
+  previewEl.style.display = 'block';
+  previewEl.innerHTML = '<div style="color:var(--amber);font-weight:500;margin-bottom:8px">'
+    + affected.length + ' contacts have sign-offs to remove. Examples (shown in red):</div>'
+    + examples
+    + (affected.length > 3 ? '<div style="color:var(--dim);font-size:11px">...and ' + (affected.length - 3) + ' more</div>' : '');
+
+  if(applyBtn) applyBtn.style.display = 'inline-flex';
+  if(statusEl) statusEl.textContent = '';
+}
+
+function applyCleanSignoffs() {
+  const affected = contacts.filter(c => {
+    const cleaned = cleanEmailBody(c.emailBody || '');
+    return cleaned !== (c.emailBody || '');
+  });
+
+  if (!affected.length) {
+    toast('Nothing to clean', 'amber');
+    return;
+  }
+
+  if (!confirm('Remove sign-offs from ' + affected.length + ' email bodies? This cannot be undone — export a backup first if needed.')) return;
+
+  let count = 0;
+  contacts = contacts.map(c => {
+    const cleaned = cleanEmailBody(c.emailBody || '');
+    if (cleaned !== (c.emailBody || '')) {
+      count++;
+      return { ...c, emailBody: cleaned, refined: false, refinedEmailBody: null };
+    }
+    return c;
+  });
+
+  save();
+  updateGlobals();
+
+  const previewEl = document.getElementById('clean-preview');
+  const applyBtn  = document.getElementById('btn-apply-clean');
+  const statusEl  = document.getElementById('clean-status');
+
+  if(previewEl) previewEl.innerHTML = '<span style="color:var(--green)">✓ Cleaned ' + count + ' email bodies. Sign-offs removed.</span>';
+  if(applyBtn)  applyBtn.style.display = 'none';
+  if(statusEl)  statusEl.textContent = '';
+
+  toast('Cleaned ' + count + ' email bodies', 'green');
+}
+
+// ── Unknown placeholder cleaner ───────────────────────────────────────────
+
+function hasUnknown(str) {
+  return /<unknown>/i.test(str || '');
+}
+
+function stripUnknown(str) {
+  if (!str) return str;
+  // Remove <unknown> anywhere it appears — replace entire field with empty string
+  // if the result would be meaningless
+  const cleaned = str.replace(/<unknown>/gi, '').trim();
+  // If what remains is just punctuation/whitespace/connectors, clear entirely
+  if (/^[\s\+\-\|·•,\.]+$/.test(cleaned)) return '';
+  return cleaned;
+}
+
+function previewUnknown() {
+  const affected = contacts.filter(c =>
+    hasUnknown(c.subjectLine) || hasUnknown(c.emailBody)
+  );
+  const el = document.getElementById('unknown-preview');
+  const btn = document.getElementById('btn-apply-unknown');
+
+  if (!affected.length) {
+    el.style.display = 'block';
+    el.innerHTML = '<span style="color:var(--green)">✓ No &lt;unknown&gt; placeholders found.</span>';
+    if(btn) btn.style.display = 'none';
+    return;
+  }
+
+  const examples = affected.slice(0, 4).map(c => {
+    const subjectBad = hasUnknown(c.subjectLine);
+    const bodyBad    = hasUnknown(c.emailBody);
+    return '<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border)">'
+      + '<div style="color:var(--text);font-size:11px;font-weight:500;margin-bottom:3px">'
+      + esc((c.fullName||(c.firstName+' '+c.lastName)).trim()) + ' — ' + esc(c.firmName||'')
+      + ' ' + badge('b-t'+c.tier,'T'+c.tier)
+      + '</div>'
+      + (subjectBad ? '<div style="color:var(--red);font-size:11px">Subject: ' + esc(c.subjectLine||'') + '</div>' : '')
+      + (bodyBad    ? '<div style="color:var(--red);font-size:11px;margin-top:2px">Body: ' + esc((c.emailBody||'').slice(0,100)) + '...</div>' : '')
+      + '</div>';
+  }).join('');
+
+  el.style.display = 'block';
+  el.innerHTML = '<div style="color:var(--amber);font-weight:500;margin-bottom:8px">'
+    + affected.length + ' contacts have &lt;unknown&gt; placeholders:</div>'
+    + examples
+    + (affected.length > 4 ? '<div style="color:var(--dim);font-size:11px">...and ' + (affected.length-4) + ' more</div>' : '');
+  if(btn) btn.style.display = 'inline-flex';
+}
+
+function applyUnknownFix() {
+  const affected = contacts.filter(c =>
+    hasUnknown(c.subjectLine) || hasUnknown(c.emailBody)
+  );
+  if (!affected.length) { toast('Nothing to fix','amber'); return; }
+  if (!confirm('Clear <unknown> from ' + affected.length + ' contacts?')) return;
+
+  contacts = contacts.map(c => {
+    const fixSubject = hasUnknown(c.subjectLine);
+    const fixBody    = hasUnknown(c.emailBody);
+    if (!fixSubject && !fixBody) return c;
+    return {
+      ...c,
+      subjectLine:      fixSubject ? '' : c.subjectLine,
+      emailBody:        fixBody    ? '' : c.emailBody,
+      refinedEmailBody: fixBody    ? null : c.refinedEmailBody,
+      refined:          fixBody    ? false : c.refined,
+    };
+  });
+
+  save(); updateGlobals();
+  const el  = document.getElementById('unknown-preview');
+  const btn = document.getElementById('btn-apply-unknown');
+  if(el)  el.innerHTML = '<span style="color:var(--green)">✓ Cleared &lt;unknown&gt; from ' + affected.length + ' contacts.</span>';
+  if(btn) btn.style.display = 'none';
+  toast('Cleared <unknown> from ' + affected.length + ' contacts', 'green');
+}
+
+// ── Bad opening sentence cleaner ──────────────────────────────────────────
+
+// Patterns that indicate the email was written FROM the client's perspective
+// (as if the contact is writing to CAN USA) rather than FROM CAN USA.
+// When found: clear the entire emailBody and subjectLine so it gets
+// rewritten from scratch via "Refine with Claude" or manual editing.
+const BAD_OPENING_PATTERNS = [
+  /^hi [a-z]+,?\s*\ni came across can usa/i,
+  /^i came across can usa/i,
+  /^i recently came across can usa/i,
+  /^i found can usa/i,
+  /^i discovered can usa/i,
+  /^i learned about can usa/i,
+  /^i heard about can usa/i,
+  /^i saw can usa/i,
+  /^i noticed can usa/i,
+  /^your company can usa/i,
+  /^can usa looks like/i,
+  /^can usa seems like/i,
+  /^as a potential client/i,
+  /^as a prospective client/i,
+  /^i am interested in can usa/i,
+  /^i'm reaching out to can usa/i,
+  /^i am reaching out to can usa/i,
+  /^i would like to learn more about can usa/i,
+];
+
+function hasBadOpening(body) {
+  if (!body) return false;
+  const trimmed = body.trim();
+  return BAD_OPENING_PATTERNS.some(p => p.test(trimmed));
+}
+
+function previewBadOpenings() {
+  const affected = contacts.filter(c => hasBadOpening(c.emailBody));
+  const previewEl = document.getElementById('bad-opening-preview');
+  const applyBtn  = document.getElementById('btn-apply-bad-opening');
+  const statusEl  = document.getElementById('bad-opening-status');
+
+  if (!affected.length) {
+    previewEl.style.display = 'block';
+    previewEl.innerHTML = '<span style="color:var(--green)">✓ No bad openings found.</span>';
+    if(applyBtn) applyBtn.style.display = 'none';
+    return;
+  }
+
+  const examples = affected.slice(0, 4).map(c => {
+    const preview = (c.emailBody || '').trim().slice(0, 150);
+    return '<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border)">'
+      + '<div style="color:var(--text);font-size:11px;font-weight:500;margin-bottom:3px">'
+      + esc((c.fullName||(c.firstName+' '+c.lastName)).trim()) + ' — ' + esc(c.firmName||'')
+      + '</div>'
+      + '<div style="color:var(--red);font-size:11px;line-height:1.5;font-style:italic">'
+      + '"' + esc(preview) + (preview.length >= 150 ? '...' : '') + '"'
+      + '</div>'
+      + '<div style="color:var(--dim);font-size:10px;margin-top:3px">Subject: ' + esc(c.subjectLine||'(none)') + '</div>'
+      + '</div>';
+  }).join('');
+
+  previewEl.style.display = 'block';
+  previewEl.innerHTML = '<div style="color:var(--amber);font-weight:500;margin-bottom:8px">'
+    + affected.length + ' contacts have incorrect email bodies (written as if FROM the contact TO CAN USA). '
+    + 'Their subject line and body will be cleared — they will need to be rewritten.</div>'
+    + examples
+    + (affected.length > 4 ? '<div style="color:var(--dim);font-size:11px;margin-top:4px">...and ' + (affected.length - 4) + ' more</div>' : '');
+
+  if(applyBtn) applyBtn.style.display = 'inline-flex';
+  if(statusEl) statusEl.textContent = '';
+}
+
+function applyBadOpeningFix() {
+  const affected = contacts.filter(c => hasBadOpening(c.emailBody));
+  if (!affected.length) { toast('Nothing to fix', 'amber'); return; }
+
+  if(!confirm('Clear email body and subject line for '+affected.length+' contacts? They will be blank — regenerate with Refine with Claude in the Review Queue.'))return;
+
+  contacts = contacts.map(c => {
+    if (!hasBadOpening(c.emailBody)) return c;
+    return {
+      ...c,
+      emailBody: '',
+      subjectLine: '',
+      refinedEmailBody: null,
+      refined: false,
+    };
+  });
+
+  save();
+  updateGlobals();
+
+  const previewEl = document.getElementById('bad-opening-preview');
+  const applyBtn  = document.getElementById('btn-apply-bad-opening');
+  if(previewEl) previewEl.innerHTML = '<span style="color:var(--green)">✓ Cleared ' + affected.length + ' contacts. Use "Refine with Claude" in the Review Queue to regenerate their emails.</span>';
+  if(applyBtn)  applyBtn.style.display = 'none';
+  toast('Cleared ' + affected.length + ' bad email bodies', 'green');
 }
 
 // ══════════════════════════════════════════════════════════════════
