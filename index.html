@@ -204,6 +204,14 @@ tr:hover td{background:rgba(255,255,255,0.02)}
 .toast-blue{background:var(--blue-bg);color:var(--blue);border:1px solid rgba(77,142,200,0.3)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin{display:inline-block;animation:spin .8s linear infinite}
+/* TIER BREAKDOWN EXPANDABLE */
+.tier-expand-btn{background:none;border:none;cursor:pointer;color:var(--dim);font-size:11px;padding:2px 5px;border-radius:4px;transition:all .12s;font-family:inherit;display:inline-flex;align-items:center;gap:4px}
+.tier-expand-btn:hover{background:rgba(255,255,255,0.07);color:var(--text)}
+.tier-expand-btn .arrow{display:inline-block;transition:transform .15s;font-size:10px}
+.tier-expand-btn.open .arrow{transform:rotate(90deg)}
+.tpl-sub-row{display:none;background:rgba(255,255,255,0.015)}
+.tpl-sub-row.visible{display:table-row}
+.tpl-sub-row td:first-child{padding-left:28px}
 /* ALERT PANEL */
 .alert-btn{position:relative;background:transparent;border:none;cursor:pointer;padding:6px;display:flex;align-items:center;justify-content:center;border-radius:6px;transition:background .12s}
 .alert-btn:hover{background:rgba(255,255,255,0.07)}
@@ -1985,6 +1993,19 @@ function doBulkApprove(){
   save();updateBulkCount();updateGlobals();toast(contacts.filter(c=>c.approved&&!c.emailSent).length+' approved','green');
 }
 
+// Tracks which tier rows are expanded
+const _tierExpanded={};
+
+function toggleTierExpand(t){
+  _tierExpanded[t]=!_tierExpanded[t];
+  const btn=document.getElementById('tier-btn-'+t);
+  if(btn)btn.classList.toggle('open',_tierExpanded[t]);
+  ['A','B','C'].forEach(tpl=>{
+    const row=document.getElementById('tpl-row-'+t+'-'+tpl);
+    if(row)row.classList.toggle('visible',_tierExpanded[t]);
+  });
+}
+
 function renderDashboard(){
   const sent=contacts.filter(c=>c.emailSent);
   const op=sent.filter(c=>c.opened).length,rp=sent.filter(c=>c.replied).length,bo=sent.filter(c=>c.bounced).length;
@@ -1993,11 +2014,46 @@ function renderDashboard(){
     {l:'Reply rate',v:(sent.length?Math.round(rp/sent.length*100):0)+'%',c:'var(--teal)',s:'vs 0.9% avg'},{l:'Bounces',v:bo,c:bo>0?'var(--red)':'var(--dim)'},
     {l:'LinkedIn pending',v:getLinkedInPending(),c:getLinkedInPending()>0?'var(--amber)':'var(--dim)',s:'connections to send'},
   ].map(s=>`<div class="stat-card"><div style="font-size:10px;color:var(--dim);margin-bottom:5px">${s.l}</div><div style="font-size:24px;font-weight:600;color:${s.c}">${s.v}</div>${s.s?`<div style="font-size:10px;color:var(--dim);margin-top:2px">${s.s}</div>`:''}</div>`).join('');
-  document.getElementById('tier-tbody').innerHTML=[1,2,3].map(t=>{
-    const tc=contacts.filter(c=>c.tier===t),ts=tc.filter(c=>c.emailSent),tt=ts.length||1;
-    const o=ts.filter(c=>c.opened).length,r=ts.filter(c=>c.replied).length;
-    return`<tr><td>${badge('b-t'+t,'Tier '+t)}</td><td style="color:var(--muted)">${tc.length}</td><td>${ts.length}</td><td>${o}</td><td style="color:var(--blue);font-weight:500">${Math.round(o/tt*100)}%</td><td>${r}</td><td style="color:var(--teal);font-weight:500">${Math.round(r/tt*100)}%</td></tr>`;
-  }).join('');
+  // Build tier breakdown with expandable template sub-rows
+  let tierHtml = '';
+  [1,2,3].forEach(t=>{
+    const tc=contacts.filter(c=>c.tier===t);
+    const ts=tc.filter(c=>c.emailSent);
+    const tt=ts.length||1;
+    const o=ts.filter(c=>c.opened).length;
+    const r=ts.filter(c=>c.replied).length;
+    const expandBtn=`<button class="tier-expand-btn" id="tier-btn-${t}" onclick="toggleTierExpand(${t})">
+      <span class="arrow">&#9654;</span> Templates
+    </button>`;
+    tierHtml += `<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">
+      <td>${badge('b-t'+t,'Tier '+t)} ${expandBtn}</td>
+      <td style="color:var(--muted)">${tc.length}</td>
+      <td>${ts.length}</td>
+      <td>${o}</td>
+      <td style="color:var(--blue);font-weight:500">${tt>1?Math.round(o/tt*100):0}%</td>
+      <td>${r}</td>
+      <td style="color:var(--teal);font-weight:500">${tt>1?Math.round(r/tt*100):0}%</td>
+    </tr>`;
+    // Template sub-rows A, B, C
+    ['A','B','C'].forEach(tpl=>{
+      const tplInfo=TPL[tpl]||{label:'Template '+tpl,cls:'b-tpl'+tpl.toLowerCase()};
+      const tpc=tc.filter(c=>(c.templateUsed||'B')===tpl);
+      const tps=tpc.filter(c=>c.emailSent);
+      const tpt=tps.length||1;
+      const tpo=tps.filter(c=>c.opened).length;
+      const tpr=tps.filter(c=>c.replied).length;
+      tierHtml += `<tr class="tpl-sub-row" id="tpl-row-${t}-${tpl}">
+        <td style="padding-left:28px">${badge(tplInfo.cls,tpl)}<span style="font-size:11px;color:var(--dim);margin-left:5px">${tplInfo.desc||tplInfo.label}</span></td>
+        <td style="color:var(--muted);font-size:12px">${tpc.length}</td>
+        <td style="font-size:12px">${tps.length}</td>
+        <td style="font-size:12px">${tpo}</td>
+        <td style="color:var(--blue);font-size:12px">${tpt>1?Math.round(tpo/tpt*100):0}%</td>
+        <td style="font-size:12px">${tpr}</td>
+        <td style="color:var(--teal);font-size:12px">${tpt>1?Math.round(tpr/tpt*100):0}%</td>
+      </tr>`;
+    });
+  });
+  document.getElementById('tier-tbody').innerHTML=tierHtml;
   const firms={};
   contacts.forEach(c=>{const fn=(c.firmName||'').trim();if(!fn)return; // skip blank firm names
   if(!firms[fn])firms[fn]={n:0,s:0,o:0,r:0,firm:fn,tier:c.tier};firms[fn].n++;if(c.tier<firms[fn].tier)firms[fn].tier=c.tier;if(c.emailSent)firms[fn].s++;if(c.opened)firms[fn].o++;if(c.replied)firms[fn].r++;});
