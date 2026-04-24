@@ -712,7 +712,7 @@ let contacts=[], seqEmails={}, userSignature='', azureClientId='';
 let htmlTemplates={}; // { 'T1-B': {html:'...', name:'...', uploadedAt:'...'}, ... }
 let customTemplates=[]; // [{id,name,tier,firms:[],subject,body,createdAt}]
 let tbEditId=null, tbSelectedFirms=new Set();
-let selectedQueueId=null, currentMode='orig', refinedBody='', activeBody='';
+let selectedQueueId=null, selectedQueueEmail='', currentMode='orig', refinedBody='', activeBody='';
 let selectedSeqEditorId=null;
 let seqCurrentTab='active';
 let msConnected=false, msAccount=null, msalInstance=null;
@@ -890,8 +890,23 @@ function toast(msg,type='green'){
 }
 function badge(cls,txt){return`<span class="badge ${cls}">${txt}</span>`;}
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function getC(id){const n=Number(id);return contacts.find(c=>Number(c.id)===n);}
-function updateC(id,ch){const n=Number(id);contacts=contacts.map(c=>Number(c.id)===n?{...c,...ch}:c);save();}
+function getC(id){
+  // Primary: match by email string (stored in data-email on sidebar items)
+  if(typeof id==='string'&&id.includes('@'))
+    return contacts.find(c=>(c.workEmail||'').toLowerCase()===id.toLowerCase());
+  // Fallback: match by numeric ID with type coercion
+  const n=Number(id);
+  return contacts.find(c=>Number(c.id)===n)||contacts.find(c=>String(c.id)===String(id));
+}
+function updateC(id,ch){
+  if(typeof id==='string'&&id.includes('@')){
+    contacts=contacts.map(c=>(c.workEmail||'').toLowerCase()===id.toLowerCase()?{...c,...ch}:c);
+  }else{
+    const n=Number(id);
+    contacts=contacts.map(c=>Number(c.id)===n||String(c.id)===String(id)?{...c,...ch}:c);
+  }
+  save();
+}
 function cleanEmDashes(t){return(t||'').replace(/ \u2014 /g,', ');}
 function statusBadge(c){
   if(c.replied)return badge('b-replied','Replied');if(c.opened)return badge('b-opened','Opened');
@@ -995,7 +1010,11 @@ function renderContacts(){
     </tr>`;
   }).join('');
 }
-function openReview(id){selectedQueueId=id;showView('queue');}
+function openReview(id){
+  const c=getC(id);
+  if(c){selectedQueueEmail=c.workEmail||'';selectedQueueId=c.id;}
+  showView('queue');
+}
 
 // ── Proper full-file CSV parser (handles multiline quoted fields) ──────────
 function parseFullCSV(text){
@@ -1156,7 +1175,7 @@ function loadReviewContact(id){
   document.getElementById('review-header').innerHTML=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px"><span style="font-weight:600;font-size:14px;color:var(--text)">${c.firstName} ${c.lastName}</span><span style="font-size:11px;color:var(--muted)">${c.jobTitle}</span>${badge('b-t'+c.tier,'Tier '+c.tier)} ${badge(TPL[c.templateUsed]?.cls,'Tpl '+c.templateUsed)} ${c.wPriorSWARM>50?badge('b-swarmp','SWARMP HOT'):''}</div><div style="font-size:12px;color:var(--muted)">${c.firmName} &nbsp;·&nbsp; ${c.workEmail}</div>`;
   document.getElementById('review-subject').value=c.subjectLine;
   document.getElementById('btn-refine').textContent=c.refined?'Re-refine with Claude':'Refine with Claude';document.getElementById('btn-reset').style.display=c.refined?'inline-flex':'none';document.getElementById('err-display').innerHTML='';
-  renderModeTabs();renderEmailDisplay();renderSigBlock();renderQueueCtx(c);
+  renderModeTabs();renderEmailDisplay();renderSigBlock();if(c)renderQueueCtx(c);
 }
 
 function renderModeTabs(){
@@ -1166,7 +1185,7 @@ function renderModeTabs(){
 }
 function setMode(m){
   currentMode=m;
-  if(m==='orig'){const c=getC(selectedQueueId);if(c)activeBody=c.emailBody;}
+  if(m==='orig'){const c=getC(selectedQueueEmail);if(c)activeBody=c.emailBody;}
   if(m==='edit')activeBody=refinedBody;
   renderModeTabs();renderEmailDisplay();renderSigBlock();
 }
@@ -1175,7 +1194,7 @@ function renderEmailDisplay(){
   if(currentMode==='orig'){el.innerHTML=`<div class="email-box${hasSig?' with-sig':''}">${esc(activeBody)}</div>`;}
   else if(currentMode==='refining'){el.innerHTML=`<div class="email-box" style="display:flex;align-items:center;justify-content:center;border-color:var(--amber-border)"><span class="spin" style="color:var(--amber);font-size:18px;margin-right:10px">&#8635;</span><span style="color:var(--amber);font-size:13px">Refining with Claude...</span></div>`;}
   else if(currentMode==='diff'){
-    const c=getC(selectedQueueId);const diff=lineDiff(c.emailBody,refinedBody);
+    const c=getC(selectedQueueEmail);const diff=lineDiff(c?c.emailBody:'',refinedBody);
     let h=`<div class="email-box${hasSig?' with-sig':''}" style="font-family:Menlo,Consolas,monospace"><div style="font-size:10px;color:var(--dim);margin-bottom:10px;display:flex;gap:14px"><span><span class="diff-rem">removed</span></span><span><span class="diff-add">added</span></span></div>`;
     diff.forEach(d=>{if(d.t==='s')h+=`<span style="color:var(--muted)">${esc(d.v)}</span>\n`;else if(d.t==='r')h+=`<span class="diff-rem">${esc(d.v)}</span>\n`;else h+=`<span class="diff-add">${esc(d.v)}</span>\n`;});
     el.innerHTML=h+'</div>';
@@ -1203,7 +1222,7 @@ function renderQueueCtx(c){
 function showEmptyReview(){document.getElementById('review-empty').style.display='flex';document.getElementById('review-content').style.display='none';}
 
 async function doRefine(){
-  if(!selectedQueueId)return;
+  if(!selectedQueueEmail)return;
   const body=activeBody||getC(selectedQueueId)?.emailBody||'';
   currentMode='refining';document.getElementById('btn-refine').disabled=true;document.getElementById('err-display').innerHTML='';
   renderModeTabs();renderEmailDisplay();
@@ -1215,12 +1234,12 @@ async function doRefine(){
     })});
     const data=await res.json();if(data.error)throw new Error(data.error.message);
     refinedBody=data.content[0].text;activeBody=refinedBody;currentMode='diff';
-    contacts=contacts.map(x=>x.id===selectedQueueId?{...x,refinedEmailBody:refinedBody,refined:true}:x);save();
+    updateC(selectedQueueEmail,{refinedEmailBody:refinedBody,refined:true});
     document.getElementById('btn-refine').textContent='Regenerate';document.getElementById('btn-reset').style.display='inline-flex';
   }catch(e){document.getElementById('err-display').innerHTML=`<div class="err-box">${e.message}</div>`;currentMode='orig';}
   document.getElementById('btn-refine').disabled=false;renderModeTabs();renderEmailDisplay();renderSigBlock();
 }
-function resetToOrig(){const c=getC(selectedQueueId);if(!c)return;activeBody=c.emailBody;refinedBody='';currentMode='orig';document.getElementById('btn-reset').style.display='none';document.getElementById('btn-refine').textContent='Refine with Claude';renderModeTabs();renderEmailDisplay();renderSigBlock();}
+function resetToOrig(){const c=getC(selectedQueueEmail);if(!c)return;activeBody=c.emailBody;refinedBody='';currentMode='orig';document.getElementById('btn-reset').style.display='none';document.getElementById('btn-refine').textContent='Refine with Claude';renderModeTabs();renderEmailDisplay();renderSigBlock();}
 async function doBulkRefine(){
   const pending=contacts.filter(c=>!c.emailSent&&c.emailBody&&!c.refined);
   if(!pending.length){toast('All emails already refined','amber');return;}
@@ -1252,10 +1271,10 @@ async function doBulkRefine(){
   renderQueue();
   toast(`Refined ${done} email${done!==1?'s':''}${failed?` (${failed} failed)`:''}. Review individually before sending.`,'green');
 }
-function doApprove(){if(!selectedQueueId)return;updateC(selectedQueueId,{approved:true,emailBody:activeBody,subjectLine:document.getElementById('review-subject').value});advanceQueue();toast('Approved','green');}
+function doApprove(){if(!selectedQueueEmail)return;updateC(selectedQueueEmail,{approved:true,emailBody:activeBody,subjectLine:document.getElementById('review-subject').value});advanceQueue();toast('Approved','green');}
 async function doSend(){
-  if(!selectedQueueId)return;
-  const c=getC(selectedQueueId);if(!c)return;
+  if(!selectedQueueEmail)return;
+  const c=getC(selectedQueueEmail);if(!c)return;
   const subj=document.getElementById('review-subject').value;
   const st=sigText();
   const full=activeBody+(st?'\n\n'+st:'');
@@ -1274,19 +1293,19 @@ async function doSend(){
       errEl.innerHTML='<div class="err-box">'+( err.detail||'Send failed')+'</div>';
       return;
     }
-    updateC(selectedQueueId,{emailSent:true,approved:true,emailBody:full,subjectLine:subj,sequenceStep:1});
+    updateC(selectedQueueEmail,{emailSent:true,approved:true,emailBody:full,subjectLine:subj,sequenceStep:1});
     errEl.innerHTML='';
     toast('Sent via Gmail ✓','green');
   }catch(e){
     errEl.innerHTML='<div class="err-box">Network error: '+e.message+'</div>';
     return;
   }
-  const sentContact=getC(selectedQueueId);
+  const sentContact=getC(selectedQueueEmail);
   advanceQueue();
   if(sentContact&&!sentContact.linkedinConnected)promptLinkedIn(sentContact.id);
 }
-function copyEmail(){const c=getC(selectedQueueId);if(!c)return;const st=sigText();navigator.clipboard.writeText(`Subject: ${document.getElementById('review-subject').value}\n\n${activeBody}${st?'\n\n'+st:''}`).then(()=>toast('Copied','blue')).catch(()=>toast('Copy failed','amber'));}
-function openInOutlook(){const c=getC(selectedQueueId);if(!c)return;const st=sigText();window.open(`mailto:${c.workEmail}?subject=${encodeURIComponent(document.getElementById('review-subject').value)}&body=${encodeURIComponent(activeBody+(st?'\n\n'+st:''))}`);}
+function copyEmail(){const c=getC(selectedQueueEmail);if(!c)return;const st=sigText();navigator.clipboard.writeText(`Subject: ${document.getElementById('review-subject').value}\n\n${activeBody}${st?'\n\n'+st:''}`).then(()=>toast('Copied','blue')).catch(()=>toast('Copy failed','amber'));}
+function openInOutlook(){const c=getC(selectedQueueEmail);if(!c)return;const st=sigText();window.open(`mailto:${c.workEmail}?subject=${encodeURIComponent(document.getElementById('review-subject').value)}&body=${encodeURIComponent(activeBody+(st?'\n\n'+st:''))}`);}
 // ── Queue tab switching ──────────────────────────────────────────
 let queueTab='bulk';
 
@@ -1437,44 +1456,50 @@ function renderQueueIndividual(){
   const brBtn=document.getElementById('btn-bulk-refine');
   if(brBtn)brBtn.textContent=unrefined>0?`Refine all (${unrefined}) with Claude`:'All refined ✓';
 
-  // Build sidebar list using data-id attribute (avoids onclick ID precision issues)
+  // Use workEmail as the stable key — never has precision issues
   document.getElementById('queue-list-items').innerHTML=pending.map(c=>{
-    const cid=String(c.id);
-    const isSelected=String(c.id)===String(selectedQueueId);
+    const email=c.workEmail||'';
+    const isSelected=email&&email===selectedQueueEmail;
     const name=esc((c.fullName||(c.firstName+' '+c.lastName)).trim());
     const refined=c.refined?' <span style="font-size:9px;color:var(--violet)">✦</span>':'';
     const hot=c.wPriorSWARM>50?badge('b-swarmp','HOT'):'';
     const uf=c.totalUnfiled>0?`<span style="font-size:10px;color:${c.totalUnfiled>200?'var(--amber)':'var(--muted)'}">${c.totalUnfiled}</span>`:'';
-    return `<div class="side-item${isSelected?' selected':''}" data-id="${cid}" onclick="selectQueueById(this)">
+    return `<div class="side-item${isSelected?' selected':''}" data-email="${esc(email)}" onclick="selectQueueByEmail(this)">
       <div class="side-name">${name}${refined}</div>
       <div class="side-firm">${esc(c.firmName||'')}</div>
       <div class="side-meta">${badge('b-t'+c.tier,'T'+c.tier)}${uf}${hot}</div>
     </div>`;
   }).join('');
 
-  // Auto-select: keep current selection if still in list, else select first
-  const stillValid=pending.some(c=>String(c.id)===String(selectedQueueId));
-  if(!stillValid&&pending.length>0)selectedQueueId=pending[0].id;
-  if(selectedQueueId)loadReviewContact(selectedQueueId);
+  // Auto-select: keep current if still valid, else first in list
+  const stillValid=pending.some(c=>c.workEmail===selectedQueueEmail);
+  if(!stillValid&&pending.length>0)selectedQueueEmail=pending[0].workEmail||'';
+  if(selectedQueueEmail)loadReviewContact(selectedQueueEmail);
   else showEmptyReview();
 }
 
-function selectQueueById(el){
-  const id=el.getAttribute('data-id');
-  if(!id)return;
-  selectedQueueId=Number(id);
+// selectedQueueEmail is the stable contact key (email is always a unique string)
+
+function selectQueueByEmail(el){
+  const email=el.getAttribute('data-email');
+  if(!email)return;
+  selectedQueueEmail=email;
   currentMode='orig';refinedBody='';
   document.querySelectorAll('#queue-list-items .side-item').forEach(e=>e.classList.remove('selected'));
   el.classList.add('selected');
-  loadReviewContact(selectedQueueId);
+  loadReviewContact(email);
 }
 
-// Keep old selectQueue for any other callers
+// Keep selectQueue for backward compat — converts ID to email then loads
 function selectQueue(id,el){
-  selectedQueueId=Number(id);currentMode='orig';refinedBody='';
+  const c=getC(id);
+  if(!c)return;
+  selectedQueueEmail=c.workEmail||'';
+  selectedQueueId=c.id;
+  currentMode='orig';refinedBody='';
   document.querySelectorAll('#queue-list-items .side-item').forEach(e=>e.classList.remove('selected'));
   if(el)el.classList.add('selected');
-  loadReviewContact(selectedQueueId);
+  loadReviewContact(selectedQueueEmail);
 }
 
 function getQueueFiltered(){
@@ -1505,7 +1530,9 @@ function getQueueBulkFiltered(){
 }
 function advanceQueue(){
   const pending=contacts.filter(c=>!c.emailSent).sort((a,b)=>a.tier-b.tier||b.totalUnfiled-a.totalUnfiled);
-  const next=pending.find(c=>c.id!==selectedQueueId);selectedQueueId=next?next.id:null;
+  const next=pending.find(c=>c.workEmail!==selectedQueueEmail);
+  selectedQueueEmail=next?next.workEmail||'':'';
+  selectedQueueId=next?next.id:null;
   currentMode='orig';refinedBody='';activeBody='';renderQueue();updateGlobals();
 }
 
