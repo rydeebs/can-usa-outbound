@@ -4,7 +4,6 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>CAN USA — Outbound Platform</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/msal.js/2.38.3/msal-browser.min.js"></script>
 <style>
 :root{
   --bg:#1A1E30;--sidebar:#151827;--surface:#202436;--surface2:#262B44;
@@ -465,24 +464,20 @@ tr:hover td{background:rgba(255,255,255,0.02)}
   <div class="scroll" style="padding:18px;max-width:520px">
     <div class="settings-card">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-        <div style="width:34px;height:34px;background:var(--blue-bg);border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="color:var(--blue);font-size:16px;font-weight:700">M</span></div>
-        <div style="flex:1"><div style="font-weight:500;color:var(--text);font-size:13px">Microsoft 365 / Outlook</div><div style="font-size:11px;color:var(--muted)">OAuth 2.0 via MSAL.js — sends from Pawel's real address</div></div>
-        <div id="ms-status"><button class="btn btn-amber" onclick="connectMS()">Sign in with Microsoft</button></div>
-      </div>
-      <div id="ms-user-info" style="display:none;margin-bottom:10px"></div>
-      <div id="ms-setup-block">
-        <div class="section-label" style="margin-bottom:6px">Azure App Client ID</div>
-        <div style="display:flex;gap:8px;margin-bottom:10px"><input class="inp" id="azure-client-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style="flex:1;font-family:monospace;font-size:12px"/><button class="btn" onclick="saveClientId()">Save</button></div>
-        <div class="info-box">
-          <strong style="display:block;margin-bottom:5px;color:var(--text)">Pawel registers this himself — no IT admin needed. 5 minutes.</strong>
-          1. Sign in to <strong>portal.azure.com</strong> with CAN USA Microsoft account.<br/>
-          2. Azure Active Directory &rarr; App registrations &rarr; New registration.<br/>
-          3. Name: "CAN USA Outbound" &nbsp;|&nbsp; Redirect URI: <strong>Single-page application (SPA)</strong> &rarr; paste your Netlify URL.<br/>
-          4. Copy the <strong>Application (client) ID</strong> &rarr; paste above &rarr; Save.<br/>
-          5. API permissions &rarr; Add &rarr; <strong>Mail.Send + Mail.ReadWrite</strong> (Delegated).<br/>
-          6. Click "Sign in with Microsoft."<br/><br/>
-          <strong>No Azure yet?</strong> Use Copy or Open in Outlook in the Review queue and Sequence Studio — both work without any setup.
+        <div style="width:34px;height:34px;background:rgba(234,67,53,0.12);border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" stroke="#EA4335" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="22,6 12,13 2,6" stroke="#EA4335" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
+        <div style="flex:1">
+          <div style="font-weight:500;color:var(--text);font-size:13px">Gmail / Google Workspace</div>
+          <div style="font-size:11px;color:var(--muted)">Sends from pawel@canusany.com via Gmail API</div>
+        </div>
+        <span class="badge b-sent">Connected</span>
+      </div>
+      <div style="padding:10px 12px;background:var(--green-bg);border-radius:6px;border:1px solid rgba(46,184,106,0.2);font-size:12px;color:var(--green)">
+        ✓ Gmail API authenticated as <strong>pawel@canusany.com</strong>. Emails are sent directly from Pawel's account. Token auto-refreshes — no action needed unless you see send errors.
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:var(--dim);line-height:1.6">
+        To re-authenticate: run <code style="background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:3px">python agent/auth.py</code> locally, then update <code style="background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:3px">TOKEN_GOOGLE_JSON</code> in Railway environment variables.
       </div>
     </div>
     <div class="settings-card">
@@ -708,14 +703,14 @@ const TPL_SLOT_KEYS=[];
 // STATE
 // ══════════════════════════════════════════════════════════════════
 // State stored server-side via /api/state
-let contacts=[], seqEmails={}, userSignature='', azureClientId='';
+let contacts=[], seqEmails={}, userSignature='';
 let htmlTemplates={}; // { 'T1-B': {html:'...', name:'...', uploadedAt:'...'}, ... }
 let customTemplates=[]; // [{id,name,tier,firms:[],subject,body,createdAt}]
 let tbEditId=null, tbSelectedFirms=new Set();
 let selectedQueueId=null, selectedQueueEmail='', currentMode='orig', refinedBody='', activeBody='';
 let selectedSeqEditorId=null;
 let seqCurrentTab='active';
-let msConnected=false, msAccount=null, msalInstance=null;
+
 
 function defaultSig(){return '';}
 
@@ -783,7 +778,7 @@ function applyHtmlTemplate(templateHtml,contact,emailBody,subject){
 // LOCALSTORAGE
 // ══════════════════════════════════════════════════════════════════
 function save(){
-  const data={contacts,seqEmails,htmlTemplates,customTemplates:customTemplates||[],userSignature,azureClientId,savedAt:new Date().toISOString()};
+  const data={contacts,seqEmails,htmlTemplates,customTemplates:customTemplates||[],userSignature,savedAt:new Date().toISOString()};
   fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
     .then(r=>{if(r.status===401)window.location.href='/login';})
     .then(()=>{
@@ -807,11 +802,11 @@ async function load(){
     htmlTemplates=d.htmlTemplates||{};
     customTemplates=d.customTemplates||[];
     userSignature=d.userSignature||'';
-    azureClientId=d.azureClientId||'';
+    
     _lastSavedAt=d.savedAt||null;
     const se=document.getElementById('sig-editor');
     if(se)se.innerHTML=userSignature;
-    if(azureClientId){const el=document.getElementById('azure-client-id');if(el)el.value=azureClientId;}
+    
     if(d.savedAt){
       const dt=new Date(d.savedAt);
       const el=document.getElementById('save-status');
@@ -852,7 +847,7 @@ async function doLogout(){
 
 function exportBackup(){
   const a=document.createElement('a');
-  a.href='data:application/json,'+encodeURIComponent(JSON.stringify({contacts,seqEmails,htmlTemplates,customTemplates,userSignature,azureClientId,exportedAt:new Date().toISOString()},null,2));
+  a.href='data:application/json,'+encodeURIComponent(JSON.stringify({contacts,seqEmails,htmlTemplates,customTemplates,userSignature,exportedAt:new Date().toISOString()},null,2));
   a.download='canusa_backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();
   toast('Backup exported','green');
 }
@@ -865,9 +860,9 @@ function importBackup(e){
       if(!d.contacts)throw new Error('Invalid backup');
       if(!confirm('Replace all current data with backup?'))return;
       contacts=d.contacts;seqEmails=d.seqEmails||{};htmlTemplates=d.htmlTemplates||{};customTemplates=d.customTemplates||[];
-      userSignature=d.userSignature||'';azureClientId=d.azureClientId||'';
+      userSignature=d.userSignature||'';
       const se=document.getElementById('sig-editor');if(se)se.innerHTML=userSignature;
-      if(azureClientId){const el=document.getElementById('azure-client-id');if(el)el.value=azureClientId;}
+      
       save();renderDashboard();updateGlobals();
       toast('Backup restored — '+contacts.length+' contacts','green');
     }catch(err){alert('Import failed: '+err.message);}
@@ -1910,37 +1905,7 @@ function previewTemplate(key){
 }
 
 // ══════════════════════════════════════════════════════════════════
-// MSAL / OUTLOOK
-// ══════════════════════════════════════════════════════════════════
-function saveClientId(){azureClientId=document.getElementById('azure-client-id').value.trim();save();toast('Client ID saved','green');}
-function getMsalConfig(){return{auth:{clientId:azureClientId,authority:'https://login.microsoftonline.com/common',redirectUri:window.location.href.split('?')[0].split('#')[0]},cache:{cacheLocation:'localStorage',storeAuthStateInCookie:true}};}
-async function connectMS(){
-  if(!azureClientId){alert('Paste your Azure App Client ID in Settings first.');return;}
-  try{
-    if(!msalInstance){msalInstance=new msal.PublicClientApplication(getMsalConfig());await msalInstance.initialize();}
-    const result=await msalInstance.loginPopup({scopes:['Mail.Send','Mail.ReadWrite','User.Read']});
-    msAccount=result.account;msConnected=true;
-    document.getElementById('ms-status').innerHTML=`<span class="badge b-sent">Signed in</span> <button class="btn" style="font-size:11px;padding:3px 8px;margin-left:6px" onclick="signOutMS()">Sign out</button>`;
-    document.getElementById('ms-user-info').style.display='block';
-    document.getElementById('ms-user-info').innerHTML=`<div style="padding:8px 10px;background:var(--green-bg);border-radius:6px;font-size:11px;color:var(--green);border:1px solid rgba(46,184,106,0.2)">Sending as: <strong>${msAccount.username}</strong></div>`;
-    document.getElementById('ms-setup-block').style.display='none';
-    renderTracking();save();toast('Signed in to Microsoft','green');
-  }catch(err){if(err.errorCode!=='user_cancelled')alert('Sign-in failed: '+err.message);}
-}
-function signOutMS(){
-  msConnected=false;msAccount=null;
-  document.getElementById('ms-status').innerHTML=`<button class="btn btn-amber" onclick="connectMS()">Sign in with Microsoft</button>`;
-  document.getElementById('ms-user-info').style.display='none';document.getElementById('ms-setup-block').style.display='block';renderTracking();
-}
-async function sendViaGraph(to,subject,plainBody,htmlBody){
-  if(!msalInstance||!msAccount)throw new Error('Not signed in');
-  const token=await msalInstance.acquireTokenSilent({scopes:['Mail.Send'],account:msAccount});
-  const contentType=htmlBody?'HTML':'Text';
-  const content=htmlBody||plainBody;
-  const payload={message:{subject,body:{contentType,content},toRecipients:[{emailAddress:{address:to}}]},saveToSentItems:true};
-  const res=await fetch('https://graph.microsoft.com/v1.0/me/sendMail',{method:'POST',headers:{'Authorization':'Bearer '+token.accessToken,'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  if(!res.ok){const e=await res.json();throw new Error(e.error?.message||'Graph API error');}
-}
+// Email sending handled via /api/send → Gmail API on server
 
 // ══════════════════════════════════════════════════════════════════
 // BULK + DASHBOARD + SETTINGS
