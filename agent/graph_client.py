@@ -157,12 +157,36 @@ class GraphClient:
         html: Optional[str] = None,
         cc: Optional[list[str]] = None,
         reply_to_message_id: Optional[str] = None,
+        tracking_token: Optional[str] = None,
     ) -> None:
         """Sends an email from Pawel's Gmail account."""
+        # Inject tracking pixel into HTML emails
+        if html and tracking_token:
+            pixel_url = (
+                f"{_get_base_url()}/track/open/{tracking_token}"
+                f"?e={_url_encode(to)}&c={_url_encode(tracking_token)}"
+            )
+            pixel = f'<img src="{pixel_url}" width="1" height="1" alt="" style="display:none;"/>'
+            # Insert before closing body tag, or append if no body tag
+            if "</body>" in html:
+                html = html.replace("</body>", f"{pixel}</body>")
+            else:
+                html = html + pixel
         if html:
             mime_msg = MIMEMultipart("alternative")
             mime_msg.attach(MIMEText(body, "plain"))
             mime_msg.attach(MIMEText(html, "html"))
+        elif tracking_token:
+            # Plain text email — wrap in minimal HTML to enable tracking pixel
+            pixel_url = (
+                f"{_get_base_url()}/track/open/{tracking_token}"
+                f"?e={_url_encode(to)}&c={_url_encode(tracking_token)}"
+            )
+            pixel = f'<img src="{pixel_url}" width="1" height="1" alt="" style="display:none;"/>'
+            html_body = f"<html><body><pre style='font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap'>{body}</pre>{pixel}</body></html>"
+            mime_msg = MIMEMultipart("alternative")
+            mime_msg.attach(MIMEText(body, "plain"))
+            mime_msg.attach(MIMEText(html_body, "html"))
         else:
             mime_msg = MIMEText(body, "plain")
 
@@ -266,6 +290,20 @@ def _extract_body(payload: dict) -> str:
             return result
 
     return ""
+
+
+def _get_base_url() -> str:
+    """Returns the Railway app base URL for tracking pixel."""
+    return os.environ.get(
+        "APP_BASE_URL",
+        "https://can-usa-outbound-production.up.railway.app"
+    )
+
+
+def _url_encode(s: str) -> str:
+    """Simple URL encoding for query params."""
+    import urllib.parse
+    return urllib.parse.quote(s, safe="")
 
 
 def _strip_html(html: str) -> str:

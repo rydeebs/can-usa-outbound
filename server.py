@@ -32,10 +32,12 @@ import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import base64
+import hashlib
 import psycopg2
 import psycopg2.extras
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response as FastAPIResponse
 
 # ── Logging ────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -174,6 +176,103 @@ def write_state(state: dict) -> None:
     else:
         _write_file(state)
 
+# ── Tracking ──────────────────────────────────────────────────────────────
+
+# 1x1 transparent GIF — the pixel itself
+TRANSPARENT_GIF = base64.b64decode(
+    "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+)
+
+def _init_tracking_table() -> None:
+    """Create email_opens tracking table if it doesn't exist."""
+    if not DATABASE_URL:
+        return
+    try:
+        conn = _get_conn()
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS email_opens (
+                        id          SERIAL PRIMARY KEY,
+                        token       TEXT NOT NULL,
+                        contact_id  TEXT,
+                        email       TEXT,
+                        opened_at   TIMESTAMP DEFAULT NOW(),
+                        user_agent  TEXT,
+                        ip          TEXT
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_email_opens_token
+                        ON email_opens(token);
+                    CREATE INDEX IF NOT EXISTS idx_email_opens_email
+                        ON email_opens(email);
+                """)
+        conn.close()
+        log.info("Tracking table ready.")
+    except Exception as e:
+        log.error(f"Tracking table init error: {e}")
+
+
+def _record_open(token: str, email: str, contact_id: str,
+                 user_agent: str, ip: str) -> None:
+    """Record an open event in the database."""
+    if not DATABASE_URL:
+        return
+    try:
+        conn = _get_conn()
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO email_opens (token, contact_id, email, user_agent, ip)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (token, contact_id, email, user_agent[:500] if user_agent else '', ip))
+        conn.close()
+        log.info(f"Open recorded: {email}")
+    except Exception as e:
+        log.warning(f"Could not record open: {e}")
+
+
+def _mark_contact_opened(email: str) -> None:
+    """Sets opened=True on the contact in app_state."""
+    try:
+        state = read_state()
+        contacts = state.get("contacts", [])
+        changed = False
+        for i, c in enumerate(contacts):
+            if c.get("workEmail", "").lower() == email.lower():
+                if not c.get("opened"):
+                    contacts[i] = {**c, "opened": True}
+                    changed = True
+                break
+        if changed:
+            state["contacts"] = contacts
+            write_state(state)
+    except Exception as e:
+        log.warning(f"Could not mark contact opened: {e}")
+
+
+def _get_open_count(email: str) -> int:
+    """Returns how many times an email has been opened."""
+    if not DATABASE_URL:
+        return 0
+    try:
+        conn = _get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM email_opens WHERE email = %s", (email,)
+            )
+            result = cur.fetchone()
+        conn.close()
+        return result[0] if result else 0
+    except Exception:
+        return 0
+
+
+def _generate_token(email: str, contact_id: str) -> str:
+    """Generates a stable token for a contact (email + contact_id hash)."""
+    raw = f"{email}:{contact_id}:{SECRET_KEY}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+
 # ── Token cache bootstrap ──────────────────────────────────────────────────
 def _bootstrap_token_cache() -> None:
     """
@@ -286,6 +385,7 @@ async function login(){
 async def lifespan(app: FastAPI):
     if DATABASE_URL:
         _init_db()
+        _init_tracking_table()
     _bootstrap_token_cache()
     task = asyncio.create_task(_agent_loop())
     log.info("Server ready.")
@@ -334,6 +434,53 @@ async def post_state(request: Request):
     write_state(body)
     return {"ok": True, "savedAt": body.get("savedAt")}
 
+# ── Tracking endpoints ────────────────────────────────────────────────────
+
+@app.get("/track/open/{token}")
+async def track_open(token: str, request: Request):
+    """
+    Serves a 1x1 transparent GIF and records the open event.
+    URL format: /track/open/{token}?e={email}&c={contact_id}
+    """
+    email      = request.query_params.get("e", "")
+    contact_id = request.query_params.get("c", "")
+    user_agent = request.headers.get("user-agent", "")
+    ip         = request.client.host if request.client else ""
+
+    # Record in tracking table
+    if email:
+        _record_open(token, email, contact_id, user_agent, ip)
+        # Mark contact as opened in app state
+        _mark_contact_opened(email)
+
+    # Always return the pixel — never a 404 or redirect
+    return FastAPIResponse(
+        content=TRANSPARENT_GIF,
+        media_type="image/gif",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@app.get("/api/opens/{email}")
+async def get_opens(email: str, request: Request):
+    """Returns open count for a specific contact email."""
+    if not is_authenticated(request):
+        raise HTTPException(status_code=401)
+    return {"email": email, "opens": _get_open_count(email)}
+
+
+@app.get("/api/token/{email}/{contact_id}")
+async def get_token(email: str, contact_id: str, request: Request):
+    """Returns the tracking token for a contact (used when building emails)."""
+    if not is_authenticated(request):
+        raise HTTPException(status_code=401)
+    return {"token": _generate_token(email, contact_id)}
+
+
 # ── Send email ────────────────────────────────────────────────────────────
 
 @app.post("/api/send")
@@ -365,9 +512,15 @@ async def api_send(request: Request):
             sys.path.insert(0, agent_dir)
         from graph_client import GraphClient  # type: ignore
         graph = GraphClient()
-        graph.send_email(to=to, subject=subject, body=text, html=html)
+        # Generate tracking token for this recipient
+        contact_id = body.get("contactId", to)
+        token = _generate_token(to, str(contact_id))
+        graph.send_email(
+            to=to, subject=subject, body=text,
+            html=html, tracking_token=token
+        )
         log.info(f"Sent via Gmail API: {to} — {subject!r}")
-        return {"ok": True}
+        return {"ok": True, "token": token}
     except FileNotFoundError:
         raise HTTPException(
             status_code=503,
