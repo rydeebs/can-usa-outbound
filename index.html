@@ -1334,7 +1334,7 @@ async function doSend(){
       errEl.innerHTML='<div class="err-box">'+( err.detail||'Send failed')+'</div>';
       return;
     }
-    updateC(selectedQueueEmail,{emailSent:true,approved:true,emailBody:full,subjectLine:subj,sequenceStep:1});
+    updateC(selectedQueueEmail,{emailSent:true,approved:true,emailBody:activeBody,subjectLine:subj,sequenceStep:1});
     errEl.innerHTML='';
     toast('Sent via Gmail ✓','green');
   }catch(e){
