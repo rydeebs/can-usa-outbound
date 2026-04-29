@@ -204,6 +204,14 @@ tr:hover td{background:rgba(255,255,255,0.02)}
 .toast-blue{background:var(--blue-bg);color:var(--blue);border:1px solid rgba(77,142,200,0.3)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin{display:inline-block;animation:spin .8s linear infinite}
+/* WRITE EMAIL PANEL */
+.write-panel{background:rgba(123,104,200,0.06);border:1px solid rgba(123,104,200,0.25);border-radius:8px;padding:14px;margin-bottom:12px}
+.write-panel-title{font-size:12px;font-weight:600;color:var(--violet);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.style-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.style-chip{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--border2);background:rgba(255,255,255,0.04);color:var(--muted);transition:all .1s;user-select:none}
+.style-chip:hover{border-color:var(--border);color:var(--text)}
+.style-chip.selected{background:var(--violet-bg);color:var(--violet);border-color:rgba(123,104,200,0.4)}
+.style-group-label{font-size:10px;font-weight:500;color:var(--dim);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px}
 /* TIER BREAKDOWN EXPANDABLE */
 .tier-expand-btn{background:none;border:none;cursor:pointer;color:var(--dim);font-size:11px;padding:2px 5px;border-radius:4px;transition:all .12s;font-family:inherit;display:inline-flex;align-items:center;gap:4px}
 .tier-expand-btn:hover{background:rgba(255,255,255,0.07);color:var(--text)}
@@ -406,6 +414,65 @@ tr:hover td{background:rgba(255,255,255,0.02)}
       <div id="review-content" style="display:none;flex:1;overflow:hidden;flex-direction:row" class="review-panel">
         <div class="review-main">
           <div id="review-header" style="margin-bottom:14px"></div>
+
+          <!-- Write with Claude panel — shown when subject/body is empty -->
+          <div id="write-panel" style="display:none">
+            <div class="write-panel">
+              <div class="write-panel-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                Write email with Claude
+                <span style="font-size:10px;font-weight:400;color:var(--dim)">— empty email detected, select style options and generate</span>
+              </div>
+
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+                <!-- Length -->
+                <div>
+                  <div class="style-group-label">Length</div>
+                  <div class="style-chips" id="chips-length">
+                    <div class="style-chip selected" data-group="length" data-val="short" onclick="selectChip(this)">Short</div>
+                    <div class="style-chip" data-group="length" data-val="medium" onclick="selectChip(this)">Medium</div>
+                    <div class="style-chip" data-group="length" data-val="long" onclick="selectChip(this)">Long</div>
+                  </div>
+                </div>
+                <!-- Tone -->
+                <div>
+                  <div class="style-group-label">Tone</div>
+                  <div class="style-chips" id="chips-tone">
+                    <div class="style-chip selected" data-group="tone" data-val="direct" onclick="selectChip(this)">Direct</div>
+                    <div class="style-chip" data-group="tone" data-val="informational" onclick="selectChip(this)">Informational</div>
+                    <div class="style-chip" data-group="tone" data-val="witty" onclick="selectChip(this)">Witty</div>
+                    <div class="style-chip" data-group="tone" data-val="consultative" onclick="selectChip(this)">Consultative</div>
+                  </div>
+                </div>
+                <!-- Angle -->
+                <div>
+                  <div class="style-group-label">Opening angle</div>
+                  <div class="style-chips" id="chips-angle">
+                    <div class="style-chip selected" data-group="angle" data-val="fisp-data" onclick="selectChip(this)">FISP data</div>
+                    <div class="style-chip" data-group="angle" data-val="swarmp" onclick="selectChip(this)">SWARMP risk</div>
+                    <div class="style-chip" data-group="angle" data-val="deadline" onclick="selectChip(this)">Deadline urgency</div>
+                    <div class="style-chip" data-group="angle" data-val="credibility" onclick="selectChip(this)">Credibility</div>
+                    <div class="style-chip" data-group="angle" data-val="linkedin" onclick="selectChip(this)">LinkedIn hook</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Custom instruction (optional) -->
+              <div style="margin-bottom:10px">
+                <div class="style-group-label" style="margin-bottom:4px">Custom instruction (optional)</div>
+                <input class="inp" id="write-custom-inst" placeholder="e.g. mention the 2/21/2027 deadline specifically, reference their NYPL work..." style="width:100%;font-size:12px"/>
+              </div>
+
+              <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-violet" id="btn-write" onclick="doWriteEmail()">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  Generate with Claude
+                </button>
+                <span id="write-status" style="font-size:12px;color:var(--dim)"></span>
+              </div>
+            </div>
+          </div>
+
           <div style="margin-bottom:14px"><div class="section-label">Subject line</div><input class="inp" id="review-subject" style="font-weight:500;width:100%"/></div>
           <div class="mode-tabs" id="mode-tabs"><button class="mode-tab active" onclick="setMode('orig')">Original</button></div>
           <div id="email-display"></div><div id="sig-block"></div><div id="err-display"></div>
@@ -1217,9 +1284,13 @@ function loadReviewContact(id){
   const c=getC(id);if(!c)return showEmptyReview();
   activeBody=c.refinedEmailBody||c.emailBody;currentMode='orig';refinedBody=c.refinedEmailBody||'';
   document.getElementById('review-empty').style.display='none';document.getElementById('review-content').style.display='flex';
-  document.getElementById('review-header').innerHTML=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px"><span style="font-weight:600;font-size:14px;color:var(--text)">${c.firstName} ${c.lastName}</span><span style="font-size:11px;color:var(--muted)">${c.jobTitle}</span>${badge('b-t'+c.tier,'Tier '+c.tier)} ${badge(TPL[c.templateUsed]?.cls,'Tpl '+c.templateUsed)} ${c.wPriorSWARM>50?badge('b-swarmp','SWARMP HOT'):''}</div><div style="font-size:12px;color:var(--muted)">${c.firmName} &nbsp;·&nbsp; ${c.workEmail}</div>`;
-  document.getElementById('review-subject').value=c.subjectLine;
+  document.getElementById('review-header').innerHTML=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px"><span style="font-weight:600;font-size:14px;color:var(--text)">${(c.fullName||(c.firstName+' '+c.lastName)).trim()}</span><span style="font-size:11px;color:var(--muted)">${c.jobTitle}</span>${badge('b-t'+c.tier,'Tier '+c.tier)} ${badge(TPL[c.templateUsed]?.cls,'Tpl '+c.templateUsed)} ${c.wPriorSWARM>50?badge('b-swarmp','SWARMP HOT'):''}</div><div style="font-size:12px;color:var(--muted)">${c.firmName} &nbsp;·&nbsp; ${c.workEmail}</div>`;
+  document.getElementById('review-subject').value=c.subjectLine||'';
   document.getElementById('btn-refine').textContent=c.refined?'Re-refine with Claude':'Refine with Claude';document.getElementById('btn-reset').style.display=c.refined?'inline-flex':'none';document.getElementById('err-display').innerHTML='';
+  // Show write panel if subject OR body is empty/unknown
+  const isEmpty=!c.subjectLine||!c.subjectLine.trim()||!activeBody||!activeBody.trim()||hasUnknown(c.subjectLine)||hasUnknown(activeBody);
+  const wp=document.getElementById('write-panel');
+  if(wp)wp.style.display=isEmpty?'block':'none';
   renderModeTabs();renderEmailDisplay();renderSigBlock();if(c)renderQueueCtx(c);
 }
 
@@ -1355,6 +1426,137 @@ async function doSend(){
 }
 function copyEmail(){const c=getC(selectedQueueEmail);if(!c)return;const st=sigText();navigator.clipboard.writeText(`Subject: ${document.getElementById('review-subject').value}\n\n${activeBody}${st?'\n\n'+st:''}`).then(()=>toast('Copied','blue')).catch(()=>toast('Copy failed','amber'));}
 function openInOutlook(){const c=getC(selectedQueueEmail);if(!c)return;const st=sigText();window.open(`mailto:${c.workEmail}?subject=${encodeURIComponent(document.getElementById('review-subject').value)}&body=${encodeURIComponent(activeBody+(st?'\n\n'+st:''))}`);}
+// ══════════════════════════════════════════════════════════════════
+// WRITE EMAIL WITH CLAUDE
+// ══════════════════════════════════════════════════════════════════
+
+function selectChip(el){
+  const group=el.getAttribute('data-group');
+  // Deselect all in this group
+  document.querySelectorAll(`.style-chip[data-group="${group}"]`).forEach(c=>c.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function getSelectedChip(group){
+  const el=document.querySelector(`.style-chip[data-group="${group}"].selected`);
+  return el?el.getAttribute('data-val'):'';
+}
+
+async function doWriteEmail(){
+  if(!selectedQueueEmail)return;
+  const c=getC(selectedQueueEmail);if(!c)return;
+
+  const length   = getSelectedChip('length')   || 'short';
+  const tone     = getSelectedChip('tone')      || 'direct';
+  const angle    = getSelectedChip('angle')     || 'fisp-data';
+  const custom   = (document.getElementById('write-custom-inst')?.value||'').trim();
+
+  const btn      = document.getElementById('btn-write');
+  const statusEl = document.getElementById('write-status');
+  btn.disabled   = true;
+  btn.innerHTML  = '<span class="spin">&#8635;</span> Generating...';
+  statusEl.textContent = '';
+
+  // Map chip values to readable instructions
+  const lengthMap   = {short:'under 120 words',medium:'120–200 words',long:'200–280 words'};
+  const toneMap     = {direct:'direct and confident',informational:'educational and informational',witty:'witty and engaging with a light touch of humor',consultative:'consultative and empathetic'};
+  const angleMap    = {
+    'fisp-data':    'Open with their specific FISP backlog numbers (totalUnfiled, sub10A). Lead with data.',
+    'swarmp':       'Open with the SWARMP risk angle — prior SWARMP buildings auto-classify as Unsafe at sub-cycle close.',
+    'deadline':     'Open with the 2/21/2027 sub-cycle 10A deadline and the math of why scaffold alone cannot meet it.',
+    'credibility':  'Open with CAN USA credibility — NYPL, US Capitol Dome, NASA, Yale Kline Tower. Then pivot to their backlog.',
+    'linkedin':     'Open with a specific reference to something on their LinkedIn profile or firm website before pivoting to the FISP angle.',
+  };
+
+  const sysPrompt = `You write cold outbound emails for Pawel Wojcik (Special Rigger, CAN USA) to NYC architect firms with FISP inspection backlogs.
+
+CAN USA provides SPRAT-certified rope access for FISP: 30–50% lower cost than scaffolding, 2–3 days per building, no street closures.
+
+Rules:
+- No em dashes (—) as connectors — use commas or periods instead
+- No banned phrases: "I wanted to reach out", "I hope this finds you well", "it's worth noting", "touch base", "circle back", "leverage", "synergy"
+- No bullet points in the email
+- No sign-off — signature is added separately
+- End with a single clear meeting ask (15 minutes, next week)
+- Write from Pawel's perspective — first person "I"
+- Output ONLY: first a subject line on one line starting with "Subject:", then a blank line, then the email body`;
+
+  const userPrompt = `Contact: ${(c.fullName||(c.firstName+' '+c.lastName)).trim()}
+Job title: ${c.jobTitle||''}
+Firm: ${c.firmName||''}
+Work email: ${c.workEmail||''}
+Tier: ${c.tier}
+Template type: ${c.templateUsed||'B'} (A=LinkedIn hook, B=Backlog-led, C=Prestige)
+Total unfiled buildings: ${c.totalUnfiled||0}
+Sub-cycle 10A count: ${c.sub10A||0}
+Sub-cycle 10B count: ${c.sub10B||0}
+Prior SWARMP buildings: ${c.wPriorSWARM||0}
+Sub-cycle 10A deadline: 2/21/2027
+Pitch anchor: ${c.pitchAnchor||''}
+Notes: ${c.notes||''}
+
+Style instructions:
+- Length: ${lengthMap[length]||length}
+- Tone: ${toneMap[tone]||tone}
+- Opening angle: ${angleMap[angle]||angle}
+${custom?'- Additional instruction: '+custom:''}
+
+Write the subject line and email body now.`;
+
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:700,
+        system:sysPrompt,
+        messages:[{role:'user',content:userPrompt}]
+      })
+    });
+    const data=await res.json();
+    if(data.error)throw new Error(data.error.message);
+
+    const output=data.content[0].text.trim();
+    // Parse subject line and body
+    const lines=output.split('\n');
+    let subject='', bodyLines=[];
+    let pastSubject=false;
+    for(const line of lines){
+      if(!pastSubject&&line.toLowerCase().startsWith('subject:')){
+        subject=line.replace(/^subject:\s*/i,'').trim();
+        pastSubject=true;
+      }else if(pastSubject){
+        bodyLines.push(line);
+      }
+    }
+    // Trim leading blank lines from body
+    while(bodyLines.length&&!bodyLines[0].trim())bodyLines.shift();
+    const bodyText=bodyLines.join('\n').trim();
+
+    if(!subject&&!bodyText){throw new Error('Claude returned unexpected format — try again');}
+
+    // Apply to the contact
+    document.getElementById('review-subject').value=subject||document.getElementById('review-subject').value;
+    activeBody=bodyText;
+    // Save to contact record
+    updateC(selectedQueueEmail,{subjectLine:subject,emailBody:bodyText,refinedEmailBody:null,refined:false});
+    renderModeTabs();renderEmailDisplay();renderSigBlock();
+
+    // Hide write panel, show refine button
+    const wp=document.getElementById('write-panel');
+    if(wp)wp.style.display='none';
+    statusEl.textContent='';
+    toast('Email written — review and send or refine further','green');
+
+  }catch(err){
+    statusEl.innerHTML='<span style="color:var(--red)">'+err.message+'</span>';
+  }finally{
+    btn.disabled=false;
+    btn.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg> Generate with Claude';
+  }
+}
+
 // ── Queue tab switching ──────────────────────────────────────────
 let queueTab='bulk';
 
