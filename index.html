@@ -1403,9 +1403,11 @@ async function doSend(){
       body:JSON.stringify({
         to:c.workEmail,
         subject:subj,
-        body:activeBody,           // plain text body only (no sig)
-        html:htmlContent,          // HTML template if available
-        htmlSignature:userSignature // raw HTML sig — server appends this
+        body:activeBody,
+        html:htmlContent,
+        htmlSignature:userSignature,
+        contactId:String(c.id),
+        threadId:c.gmailThreadId||null,
       })
     });
     if(!r.ok){
@@ -1413,7 +1415,13 @@ async function doSend(){
       errEl.innerHTML='<div class="err-box">'+( err.detail||'Send failed')+'</div>';
       return;
     }
-    updateC(selectedQueueEmail,{emailSent:true,approved:true,emailBody:activeBody,subjectLine:subj,sequenceStep:1});
+    const sendData=await r.json().catch(()=>({}));
+    updateC(selectedQueueEmail,{
+      emailSent:true,approved:true,emailBody:activeBody,
+      subjectLine:subj,sequenceStep:1,
+      gmailThreadId:sendData.threadId||null,
+      gmailMessageId:sendData.messageId||null,
+    });
     errEl.innerHTML='';
     toast('Sent via Gmail ✓','green');
   }catch(e){
@@ -1883,7 +1891,7 @@ function renderSeqCard(c){
         ${c.paused?'<span style="font-size:11px;color:var(--amber)">Paused</span>':''}
         <button class="btn" onclick="toggleSeqPause(${c.id})">${c.paused?'Resume':'Pause'}</button>
         ${c.sequenceStep<SEQ_META.length-1&&!c.replied?`<button class="btn btn-amber" onclick="advanceSeqStep(${c.id})">Advance</button>`:''}
-        <button class="btn btn-violet" onclick="openSeqEditor(${c.id})">Edit sequence</button>
+        <button class="btn btn-violet" data-email="${c.workEmail||''}" onclick="openSeqEditorByEmail(this.dataset.email)">Edit sequence</button>
       </div>
     </div>
     <div class="seq-timeline">${steps}</div>
@@ -1924,7 +1932,7 @@ function renderSeqContactsTable(filtered){
       <td style="font-size:12px;color:var(--muted)">${c.emailSent?`Step ${c.sequenceStep}/4`:'—'}</td>
       <td>${liCel}</td>
       <td>${desCel}</td>
-      <td><button class="btn btn-violet" style="font-size:11px;padding:4px 9px" onclick="openSeqEditor(${c.id})">Sequence</button></td>
+      <td><button class="btn btn-violet" style="font-size:11px;padding:4px 9px" data-email="${c.workEmail||''}" onclick="openSeqEditorByEmail(this.dataset.email)">Sequence</button></td>
     </tr>`;
   }).join('');
 }
@@ -1934,11 +1942,19 @@ function advanceSeqStep(id){const c=getC(id);if(c&&c.sequenceStep<SEQ_META.lengt
 // ══════════════════════════════════════════════════════════════════
 // SEQUENCE EDITOR SIDE PANEL
 // ══════════════════════════════════════════════════════════════════
+function openSeqEditorByEmail(email){
+  const c=contacts.find(x=>(x.workEmail||'').toLowerCase()===email.toLowerCase());
+  if(!c){toast('Contact not found','amber');return;}
+  openSeqEditor(c.id);
+}
+
 function openSeqEditor(id){
-  selectedSeqEditorId=id;const c=getC(id);if(!c)return;
-  document.getElementById('editor-contact-name').textContent=`${c.firstName} ${c.lastName}`;
+  const c=getC(id);if(!c)return;
+  selectedSeqEditorId=c.id; // use resolved id
+  const name=(c.fullName||(c.firstName+' '+c.lastName)).trim();
+  document.getElementById('editor-contact-name').textContent=name;
   document.getElementById('editor-contact-sub').textContent=`${c.firmName} · ${c.workEmail}`;
-  renderSeqEditorBody(id);
+  renderSeqEditorBody(c.id);
   document.getElementById('seq-editor-overlay').classList.add('open');
   document.getElementById('seq-editor-panel').classList.add('open');
 }
@@ -2062,7 +2078,9 @@ async function sendSeqStep(contactId,step){
         subject:email.subject,
         body:email.body,
         html:htmlContent,
-        htmlSignature:userSignature
+        htmlSignature:userSignature,
+        threadId:c.gmailThreadId||null,   // reply in original thread
+        contactId:String(c.id),
       })
     });
     if(!r.ok){

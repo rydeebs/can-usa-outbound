@@ -158,8 +158,13 @@ class GraphClient:
         cc: Optional[list[str]] = None,
         reply_to_message_id: Optional[str] = None,
         tracking_token: Optional[str] = None,
-    ) -> None:
-        """Sends an email from Pawel's Gmail account."""
+        thread_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        """
+        Sends an email from Pawel's Gmail account.
+        Returns the sent message dict containing id and threadId.
+        Pass thread_id to send as a reply in an existing thread.
+        """
         # Inject tracking pixel into HTML emails
         if html and tracking_token:
             pixel_url = (
@@ -210,10 +215,15 @@ class GraphClient:
             except Exception:
                 pass
 
-        self._service.users().messages().send(
+        # Include threadId to reply in existing thread
+        if thread_id:
+            payload["threadId"] = thread_id
+
+        result = self._service.users().messages().send(
             userId="me", body=payload
         ).execute()
-        log.info(f"Gmail sent to {to} — {subject!r}")
+        log.info(f"Gmail sent to {to} — {subject!r} (thread: {result.get('threadId','new')})")
+        return result  # contains id and threadId
 
     # ── Message management ─────────────────────────────────────────────────
 

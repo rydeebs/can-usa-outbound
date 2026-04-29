@@ -167,6 +167,54 @@ def process_reply(
         )
 
 
+def _send_due_followups(
+    graph: "GraphClient",
+    store: "ContactStore",
+    engine: "SequenceEngine",
+    tpl: "TemplateEngine",
+) -> None:
+    """
+    Checks which contacts are due for their next follow-up step and sends it.
+    Only called when AUTO_SEND=true.
+    Follow-ups are sent as replies in the original Gmail thread so the
+    contact sees them as part of the same conversation.
+    """
+    due = engine.get_due_contacts()
+    if not due:
+        return
+    log.info(f"Sending {len(due)} scheduled follow-up(s)...")
+    for contact, step in due:
+        try:
+            subject, body_text = engine.get_followup_body(contact, step)
+            sig = ""  # signature handled by template or appended plain
+            html_content = tpl.apply(contact, body_text, subject)
+            thread_id = contact.get("gmailThreadId")  # reply in original thread
+
+            result = graph.send_email(
+                to=contact["workEmail"],
+                subject=subject,
+                body=body_text,
+                html=html_content,
+                thread_id=thread_id,
+            )
+            thread_id_new = result.get("threadId") if result else thread_id
+            engine.record_step_sent(contact["id"], step, subject, body_text)
+            store.update(contact["id"], {
+                "sequenceStep": step,
+                "gmailThreadId": thread_id_new or thread_id,
+            })
+            log.info(
+                f"Follow-up step {step} sent to "
+                f"{contact.get('firstName','')} {contact.get('lastName','')} "
+                f"<{contact['workEmail']}>"
+            )
+        except Exception as e:
+            log.error(
+                f"Error sending follow-up to {contact.get('workEmail','?')}: {e}",
+                exc_info=True,
+            )
+
+
 def check_inbox() -> None:
     """Called on schedule. Fetches all unread mail and processes each."""
     log.info("Polling inbox...")
@@ -199,6 +247,21 @@ def check_inbox() -> None:
             log.error(
                 f"Error processing message from {reply.get('from_email','?')}: {e}",
                 exc_info=True,
+            )
+
+    # ── Auto-send scheduled follow-up emails ──────────────────────────────
+    # Check which contacts are due for their next sequence step and send it
+    if AUTO_SEND:
+        _send_due_followups(graph, store, engine, tpl)
+    else:
+        # Even in review mode, log what would be sent so Pawel knows
+        due = engine.get_due_contacts()
+        if due:
+            log.info(
+                f"AUTO_SEND=false — {len(due)} follow-up(s) due but not sent: "
+                + ", ".join(f"{c.get('firstName','')} {c.get('lastName','')} (step {step})"
+                            for c, step in due[:5])
+                + (" ..." if len(due) > 5 else "")
             )
 
 

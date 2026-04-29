@@ -509,6 +509,7 @@ async def api_send(request: Request):
     text          = body.get("body", "").strip()
     html_template = body.get("html") or None
     html_sig      = body.get("htmlSignature") or ""
+    thread_id     = body.get("threadId") or None   # for reply threading
 
     if not to or not subject:
         raise HTTPException(status_code=400, detail="to and subject are required")
@@ -550,10 +551,13 @@ async def api_send(request: Request):
 {sig_block}
 {pixel_tag}
 </body></html>"""
-            graph.send_email(to=to, subject=subject, body=text, html=full_html)
+            result = graph.send_email(to=to, subject=subject, body=text,
+                                html=full_html, thread_id=thread_id)
 
         log.info(f"Sent via Gmail API: {to} — {subject!r}")
-        return {"ok": True, "token": token}
+        return {"ok": True, "token": token,
+                "threadId": result.get("threadId") if result else None,
+                "messageId": result.get("id") if result else None}
     except FileNotFoundError:
         raise HTTPException(
             status_code=503,
