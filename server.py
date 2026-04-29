@@ -616,6 +616,52 @@ async def mark_alerts_read(request: Request):
         pass
     return {"ok": True}
 
+# ── Claude API proxy ──────────────────────────────────────────────────────
+# The browser cannot call api.anthropic.com directly (CORS blocked).
+# All Claude API calls from the frontend go through this endpoint instead.
+
+@app.post("/api/claude")
+async def claude_proxy(request: Request):
+    """
+    Proxies requests to the Anthropic Messages API.
+    Accepts the same body as the Anthropic API and returns the same response.
+    """
+    if not is_authenticated(request):
+        raise HTTPException(status_code=401)
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not configured")
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    # Force safe defaults
+    body.setdefault("model", "claude-sonnet-4-20250514")
+    body.setdefault("max_tokens", 1024)
+
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json=body,
+            )
+        return JSONResponse(resp.json(), status_code=resp.status_code)
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Claude API timed out")
+    except Exception as e:
+        log.error(f"Claude proxy error: {e}")
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 # ── Health ─────────────────────────────────────────────────────────────────
 @app.get("/health")
 async def health():

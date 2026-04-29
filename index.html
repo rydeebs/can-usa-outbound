@@ -1343,7 +1343,7 @@ async function doRefine(){
   currentMode='refining';document.getElementById('btn-refine').disabled=true;document.getElementById('err-display').innerHTML='';
   renderModeTabs();renderEmailDisplay();
   try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    const res=await fetch('/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       model:'claude-sonnet-4-20250514',max_tokens:1000,
       system:`Edit this cold outbound email from Pawel (Special Rigger, CAN USA) to NYC architect principals. (1) tighten to under 200 words; (2) replace em dashes as sentence connectors with commas or periods, preserve en dashes in ranges; (3) remove AI-sounding phrases; (4) preserve FISP data hooks; (5) no sign-off. Return only the refined body.`,
       messages:[{role:'user',content:body}]
@@ -1368,7 +1368,7 @@ async function doBulkRefine(){
     const c=pending[i];
     if(statusEl)statusEl.textContent=`Refining ${i+1} of ${pending.length}...`;
     try{
-      const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      const res=await fetch('/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
         model:'claude-sonnet-4-20250514',max_tokens:800,
         system:`Edit this cold outbound email from Pawel (Special Rigger, CAN USA) to NYC architect principals. Rules: (1) tighten to under 200 words; (2) replace em dashes used as sentence connectors with commas or periods — preserve en dashes in ranges like 2–3 days or 30–50%; (3) remove AI-sounding phrases like "I wanted to reach out", "I hope this finds you well", "it's worth noting"; (4) preserve the FISP data hook (unfiled building counts, deadlines); (5) no sign-off — appended separately. Return only the refined body, nothing else.`,
         messages:[{role:'user',content:c.emailBody}]
@@ -1512,7 +1512,7 @@ ${custom?'- Additional instruction: '+custom:''}
 Write the subject line and email body now.`;
 
   try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
+    const res=await fetch('/api/claude',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
@@ -1943,18 +1943,32 @@ function advanceSeqStep(id){const c=getC(id);if(c&&c.sequenceStep<SEQ_META.lengt
 // SEQUENCE EDITOR SIDE PANEL
 // ══════════════════════════════════════════════════════════════════
 function openSeqEditorByEmail(email){
-  const c=contacts.find(x=>(x.workEmail||'').toLowerCase()===email.toLowerCase());
-  if(!c){toast('Contact not found','amber');return;}
-  openSeqEditor(c.id);
+  if(!email){toast('No email address on this contact','amber');return;}
+  // Find contact by email — case insensitive, exact match
+  const c=contacts.find(x=>(x.workEmail||'').toLowerCase().trim()===email.toLowerCase().trim());
+  if(!c){
+    toast('Contact not found for email: '+email,'amber');
+    console.warn('openSeqEditorByEmail: no contact found for email='+email);
+    return;
+  }
+  // Open directly without going through numeric id lookup
+  _openSeqEditorForContact(c);
 }
 
 function openSeqEditor(id){
-  const c=getC(id);if(!c)return;
-  selectedSeqEditorId=c.id; // use resolved id
+  // Legacy path — try email first, then numeric id
+  const byEmail=contacts.find(x=>Number(x.id)===Number(id)||String(x.id)===String(id));
+  if(byEmail){_openSeqEditorForContact(byEmail);}
+  else{toast('Contact not found','amber');console.warn('openSeqEditor: no contact for id='+id);}
+}
+
+function _openSeqEditorForContact(c){
+  // Single source of truth for opening the editor — always receives a real contact object
+  selectedSeqEditorId=c.id;
   const name=(c.fullName||(c.firstName+' '+c.lastName)).trim();
   document.getElementById('editor-contact-name').textContent=name;
-  document.getElementById('editor-contact-sub').textContent=`${c.firmName} · ${c.workEmail}`;
-  renderSeqEditorBody(c.id);
+  document.getElementById('editor-contact-sub').textContent=(c.firmName||'')+' · '+(c.workEmail||'');
+  renderSeqEditorBody(c);  // pass full contact object to avoid id lookup
   document.getElementById('seq-editor-overlay').classList.add('open');
   document.getElementById('seq-editor-panel').classList.add('open');
 }
@@ -1964,8 +1978,12 @@ function closeSeqEditor(){
   renderSeqStudio();
 }
 
-function renderSeqEditorBody(contactId){
-  const c=getC(contactId);if(!c){document.getElementById('seq-editor-body').innerHTML='';return;}
+function renderSeqEditorBody(contactOrId){
+  // Accept either a contact object or an id
+  const c=(typeof contactOrId==='object'&&contactOrId!==null)
+    ? contactOrId
+    : getC(contactOrId);
+  if(!c){document.getElementById('seq-editor-body').innerHTML='<div style="padding:20px;color:var(--dim)">Contact not found</div>';return;}
   const tplKey=`T${c.tier}-${c.templateUsed}`;
   const hasHtml=!!htmlTemplates[tplKey];
   let html=`<div style="margin-bottom:14px;padding:10px 12px;background:rgba(255,255,255,0.03);border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -2037,7 +2055,7 @@ async function generateAIReply(contactId,step){
   const statusEl=document.getElementById(`ai-gen-status-${step}`);
   if(statusEl)statusEl.innerHTML=`<span class="spin" style="color:var(--amber)">&#8635;</span> Generating...`;
   try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    const res=await fetch('/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       model:'claude-sonnet-4-20250514',max_tokens:600,
       system:`You are helping Pawel (Special Rigger, CAN USA) reply to ${c.firstName} ${c.lastName} at ${c.firmName}. CAN USA provides SPRAT rope access for NYC FISP at 30–50% lower cost, 2–3 days/building. ${c.firmName} has ${c.totalUnfiled} unfiled, ${c.sub10A} in 10A (deadline 2/21/2027). Write a warm, concise reply (under 150 words) that: (1) addresses every question or concern raised; (2) overcomes objections with facts; (3) aggressively moves toward a meeting — if there's any openness, propose a specific time slot; (4) no em dashes as connectors; (5) no AI phrases; (6) no sign-off. Return only the email body.`,
       messages:[{role:'user',content:`Pawel's previous email:\n${prevEmail.body}\n\n---\n${c.firstName}'s reply:\n${replyText}\n\nWrite Pawel's reply.`}]
