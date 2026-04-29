@@ -481,7 +481,6 @@ tr:hover td{background:rgba(255,255,255,0.02)}
             <button class="btn" id="btn-reset" style="display:none" onclick="resetToOrig()">Reset</button>
             <div style="flex:1"></div>
             <button class="btn" onclick="copyEmail()">Copy</button>
-            <button class="btn" onclick="openInOutlook()">Outlook</button>
             <button class="btn btn-amber" onclick="doApprove()">Approve</button>
             <button class="btn btn-solid" onclick="doSend()">Send</button>
           </div>
@@ -1339,7 +1338,12 @@ function showEmptyReview(){document.getElementById('review-empty').style.display
 
 async function doRefine(){
   if(!selectedQueueEmail)return;
-  const body=activeBody||getC(selectedQueueId)?.emailBody||'';
+  const c=getC(selectedQueueEmail);
+  const body=activeBody||(c?.refinedEmailBody)||c?.emailBody||'';
+  if(!body.trim()){
+    document.getElementById('err-display').innerHTML='<div class="err-box">No email body to refine — use Write with Claude above to generate one first.</div>';
+    return;
+  }
   currentMode='refining';document.getElementById('btn-refine').disabled=true;document.getElementById('err-display').innerHTML='';
   renderModeTabs();renderEmailDisplay();
   try{

@@ -642,24 +642,22 @@ async def claude_proxy(request: Request):
     body.setdefault("model", "claude-sonnet-4-20250514")
     body.setdefault("max_tokens", 1024)
 
-    import httpx
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json=body,
-            )
+        import requests as req_lib
+        resp = req_lib.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json=body,
+            timeout=60,
+        )
         return JSONResponse(resp.json(), status_code=resp.status_code)
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Claude API timed out")
     except Exception as e:
-        log.error(f"Claude proxy error: {e}")
-        raise HTTPException(status_code=502, detail=str(e))
+        log.error(f"Claude proxy error: {e}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"Claude API error: {str(e)}")
 
 
 # ── Health ─────────────────────────────────────────────────────────────────
