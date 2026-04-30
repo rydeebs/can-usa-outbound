@@ -484,8 +484,16 @@ tr:hover td{background:rgba(255,255,255,0.02)}
         <div class="style-group-label" style="margin-bottom:4px">Custom instruction (optional)</div>
         <input class="inp" id="bc-custom-inst" placeholder="e.g. mention the 2/21/2027 deadline, keep it punchy..." style="width:100%;font-size:12px"/>
       </div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <!-- Randomize into groups -->
+      <div id="bc-groups-area" style="margin-bottom:12px;display:none">
+        <div style="font-size:11px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">
+          5 random groups — select style per group then generate
+        </div>
+        <div id="bc-groups-list" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button class="btn btn-violet" id="bc-btn-generate" onclick="doBulkCreate()" style="font-size:13px;padding:9px 20px">✦ Generate with Claude</button>
+        <button class="btn" style="font-size:13px;padding:9px 16px" onclick="bcRandomizeGroups()">⚄ Randomize into 5 groups</button>
         <button class="btn" id="bc-btn-stop" style="display:none;color:var(--red);border-color:rgba(192,80,80,0.3)" onclick="bcStop=true">Stop</button>
         <span id="bc-status" style="font-size:12px;color:var(--muted)"></span>
       </div>
@@ -1850,6 +1858,9 @@ function setQueueTab(tab){
     renderQueueIndividual();
   }else if(tab==='bulkcreate'){
     if(bc)bc.style.display='block';
+    // Hide the individual-review empty-state message
+    const re=document.getElementById('review-empty');
+    if(re)re.style.display='none';
     _populateBcFirmDropdown();
     renderBulkCreate();
   }
@@ -3519,6 +3530,146 @@ function forceWipeContact(email){
 // ══════════════════════════════════════════════════════════════════
 
 let bcStop = false;
+
+// ── Bulk Create group randomizer ──────────────────────────────────
+let _bcGroups = []; // [{contacts, tone, angle, length}]
+
+function bcRandomizeGroups(){
+  const list = getBcFiltered();
+  if(!list.length){toast('No contacts match the filter','amber');return;}
+
+  // Shuffle
+  const shuffled = [...list].sort(()=>Math.random()-0.5);
+  const n = 5;
+  _bcGroups = Array.from({length:n},(_,i)=>({
+    contacts: shuffled.filter((_,j)=>j%n===i),
+    tone: ['direct','informational','witty','consultative','direct'][i],
+    angle: ['fisp-data','swarmp','deadline','credibility','linkedin'][i],
+    length: 'short',
+  }));
+
+  const el = document.getElementById('bc-groups-area');
+  if(el) el.style.display = 'block';
+  renderBcGroups();
+  toast('Randomized '+list.length+' contacts into 5 groups','green');
+}
+
+function renderBcGroups(){
+  const el = document.getElementById('bc-groups-list');
+  if(!el) return;
+
+  const toneOpts = ['direct','informational','witty','consultative'];
+  const angleOpts = ['fisp-data','swarmp','deadline','credibility','linkedin'];
+  const toneLabels = {direct:'Direct',informational:'Informational',witty:'Witty',consultative:'Consultative'};
+  const angleLabels = {'fisp-data':'FISP data','swarmp':'SWARMP risk','deadline':'Deadline urgency','credibility':'Credibility','linkedin':'LinkedIn hook'};
+  const groupColors = ['var(--amber)','var(--blue)','var(--violet)','var(--teal)','#E07070'];
+
+  el.innerHTML = _bcGroups.map((g,i) => {
+    const toneSelect = toneOpts.map(t =>
+      `<option value="${t}"${g.tone===t?' selected':''}>${toneLabels[t]}</option>`
+    ).join('');
+    const angleSelect = angleOpts.map(a =>
+      `<option value="${a}"${g.angle===a?' selected':''}>${angleLabels[a]}</option>`
+    ).join('');
+    return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-left:3px solid ${groupColors[i]};border-radius:7px">
+      <span style="font-size:12px;font-weight:600;color:${groupColors[i]};min-width:60px">Group ${i+1}</span>
+      <span style="font-size:12px;color:var(--muted);min-width:80px">${g.contacts.length} contacts</span>
+      <select class="inp" style="font-size:11px;padding:3px 7px;width:130px" onchange="_bcGroups[${i}].tone=this.value">
+        ${toneSelect}
+      </select>
+      <select class="inp" style="font-size:11px;padding:3px 7px;width:150px" onchange="_bcGroups[${i}].angle=this.value">
+        ${angleSelect}
+      </select>
+      <button class="btn btn-violet" style="font-size:11px;padding:4px 12px" onclick="doBulkCreateGroup(${i})">Generate</button>
+      <span id="bc-group-status-${i}" style="font-size:11px;color:var(--dim)"></span>
+    </div>`;
+  }).join('');
+}
+
+async function doBulkCreateGroup(groupIdx){
+  const g = _bcGroups[groupIdx];
+  if(!g || !g.contacts.length){toast('No contacts in this group','amber');return;}
+  if(!confirm('Generate emails for '+g.contacts.length+' contacts in Group '+(groupIdx+1)+'?'))return;
+
+  const tone = g.tone, angle = g.angle, length = g.length || 'short';
+  const custom = (document.getElementById('bc-custom-inst')?.value||'').trim();
+
+  const toneLabels={direct:'Direct',informational:'Info',witty:'Witty',consultative:'Consultative'};
+  const angleLabels={'fisp-data':'FISP','swarmp':'SWARMP','deadline':'Urgent','credibility':'Credibility','linkedin':'LinkedIn'};
+  const tplName='Tpl '+(toneLabels[tone]||tone)+' + '+(angleLabels[angle]||angle);
+
+  const lengthMap={short:'under 120 words',medium:'120-200 words',long:'200-280 words'};
+  const toneMap={direct:'direct and confident',informational:'educational and informational',witty:'witty and engaging',consultative:'consultative and empathetic'};
+  const angleMap={
+    'fisp-data':'Open with their specific FISP backlog numbers. Lead with data.',
+    'swarmp':'Open with the SWARMP risk angle.',
+    'deadline':'Open with the 2/21/2027 sub-cycle 10A deadline.',
+    'credibility':'Open with CAN USA 40+ year heritage. Use the relevant heritage talking point for this tone.',
+    'linkedin':'Open with a specific reference to their LinkedIn profile or firm work.',
+  };
+
+  const statusEl = document.getElementById('bc-group-status-'+groupIdx);
+  const btn = document.querySelector(`#bc-groups-list button[onclick="doBulkCreateGroup(${groupIdx})"]`);
+  if(btn){btn.disabled=true;btn.textContent='Generating...';}
+
+  const sysPrompt = `You write cold outbound emails for Pawel Chrzanowski (Vice President, CAN USA) to NYC architect firms with FISP inspection backlogs.
+
+CAN USA provides SPRAT-certified rope access for FISP: 30-50% lower cost than scaffolding, 2-3 days per building, no street closures.
+
+CAN USA heritage talking points (use when relevant, adapt freely):
+- Direct/cost: "For 40+ years we have done rope access at heights most crews won't touch, at a fraction of scaffolding cost. We train architects to certify in rope access themselves."
+- Informational: "Rope access has been our craft for over four decades. Architects come to us to get certified in it. Same depth, now applied to FISP."
+- Witty/punchy: "40+ years on the ropes. A fraction of scaffolding cost. The only firm credentialed to train architects in rope access, now in FISP."
+
+Rules:
+- No em dashes as connectors
+- No banned phrases: "I wanted to reach out", "I hope this finds you well", "touch base", "circle back"
+- No bullet points, no sign-off
+- End with a single clear meeting ask
+- First person "I" from Pawel's perspective
+- Output ONLY: subject line starting "Subject:", blank line, then email body`;
+
+  let done=0, failed=0;
+  for(let i=0;i<g.contacts.length;i++){
+    if(bcStop)break;
+    const c = g.contacts[i];
+    if(statusEl) statusEl.textContent = `${i+1}/${g.contacts.length}...`;
+
+    const userPrompt = 'Contact: '+(c.fullName||(c.firstName+' '+c.lastName)).trim()
+      +'\nFirm: '+(c.firmName||'')+'\nTier: '+c.tier+'\nTemplate: '+(c.templateUsed||'B')
+      +'\nUnfiled: '+(c.totalUnfiled||0)+', 10A: '+(c.sub10A||0)+', SWARMP: '+(c.wPriorSWARM||0)
+      +'\n\nTone: '+(toneMap[tone]||tone)+'\nAngle: '+(angleMap[angle]||angle)
+      +'\nLength: '+(lengthMap[length]||length)
+      +(custom?'\nInstruction: '+custom:'')
+      +'\n\nWrite subject line and email body now.';
+
+    try{
+      const res = await fetch('/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:700,
+          system:sysPrompt,messages:[{role:'user',content:userPrompt}]})});
+      const data = await res.json();
+      if(data.error) throw new Error(data.error.message);
+      const lines = data.content[0].text.trim().split('\n');
+      let subject='', bodyLines=[], past=false;
+      for(const ln of lines){
+        if(!past&&ln.toLowerCase().startsWith('subject:')){subject=ln.replace(/^subject:\s*/i,'').trim();past=true;}
+        else if(past) bodyLines.push(ln);
+      }
+      while(bodyLines.length&&!bodyLines[0].trim())bodyLines.shift();
+      const body = bodyLines.join('\n').trim();
+      updateC(c.workEmail,{subjectLine:subject,emailBody:body,refinedEmailBody:null,refined:false,writeTemplateName:tplName});
+      _saveWriteTemplate(tplName,tone,angle,length,custom,subject,body,c);
+      done++;
+    }catch(err){ failed++; }
+
+    if(i<g.contacts.length-1&&!bcStop) await new Promise(r=>setTimeout(r,600));
+  }
+
+  save();
+  if(btn){btn.disabled=false;btn.textContent='Generate';}
+  if(statusEl) statusEl.textContent = done+' done'+(failed?' ('+failed+' failed)':'');
+  toast('Group '+(groupIdx+1)+': '+done+' emails generated as "'+tplName+'"','green');
+}
 
 function _populateBcFirmDropdown(){
   const firms=[...new Set(contacts.filter(c=>!c.emailSent&&c.firmName).map(c=>c.firmName))].sort();
