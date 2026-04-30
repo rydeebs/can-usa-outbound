@@ -375,6 +375,9 @@ tr:hover td{background:rgba(255,255,255,0.02)}
       <select class="inp" id="q-bulk-firm" onchange="renderQueueGroups()" style="width:160px;font-size:12px">
         <option value="all">All firms</option>
       </select>
+      <select class="inp" id="q-bulk-template" onchange="renderQueueGroups()" style="width:190px;font-size:12px">
+        <option value="all">All templates</option>
+      </select>
       <span style="font-size:12px;color:var(--dim)">Pending: <span id="q-pending-count" style="color:var(--amber);font-weight:600">0</span></span>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6;max-width:700px">
@@ -1860,6 +1863,21 @@ function _populateQueueFirmDropdowns(){
   });
 }
 
+function refreshBulkTemplateFilter(){
+  const el=document.getElementById('q-bulk-template');
+  if(!el)return;
+  const current=el.value||'all';
+  const pending=contacts.filter(c=>!c.emailSent&&!c.approved);
+  const baseTpls=[...new Set(pending.map(c=>c.templateUsed||'B'))].sort();
+  const generated=[...new Set(pending.map(c=>c.writeTemplateName||'').filter(Boolean))].sort();
+  let html='<option value="all">All templates</option>';
+  html+=baseTpls.map(t=>'<option value="base:'+t+'">Template '+t+'</option>').join('');
+  html+=generated.map(name=>'<option value="gen:'+encodeURIComponent(name)+'">Generated: '+esc(name)+'</option>').join('');
+  el.innerHTML=html;
+  const valid=[...el.options].some(o=>o.value===current);
+  el.value=valid?current:'all';
+}
+
 function setQueueTab(tab){
   queueTab=tab;
   const bulk=document.getElementById('queue-bulk-view');
@@ -1880,6 +1898,7 @@ function setQueueTab(tab){
   if(activeEl){activeEl.style.borderBottomColor='var(--amber)';activeEl.style.color='var(--amber)';}
   if(tab==='bulk'){
     if(bulk)bulk.style.display='';
+    refreshBulkTemplateFilter();
     renderQueueGroups();
   }else if(tab==='individual'){
     if(ind)ind.style.display='flex';
@@ -2082,6 +2101,7 @@ function getQueueBulkFiltered(){
   const ft=document.getElementById('q-bulk-tier')?.value||'all';
   const fh=document.getElementById('q-bulk-hot')?.value||'all';
   const ff=document.getElementById('q-bulk-firm')?.value||'all';
+  const fp=document.getElementById('q-bulk-template')?.value||'all';
   return contacts
     .filter(c=>!c.emailSent&&!c.approved)
     .filter(c=>ft==='all'||String(c.tier)===ft)
@@ -2093,6 +2113,12 @@ function getQueueBulkFiltered(){
       return true;
     })
     .filter(c=>ff==='all'||c.firmName===ff)
+    .filter(c=>{
+      if(fp==='all')return true;
+      if(fp.startsWith('base:'))return (c.templateUsed||'B')===fp.slice(5);
+      if(fp.startsWith('gen:'))return (c.writeTemplateName||'')===decodeURIComponent(fp.slice(4));
+      return true;
+    })
     .filter(c=>!s||`${c.firmName||''}`.toLowerCase().includes(s));
 }
 function advanceQueue(){
