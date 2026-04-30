@@ -141,7 +141,7 @@ class TemplateEngine:
           {{signature}}       — HTML signature from the frontend settings
 
         Sender (from SENDER_EMAIL env or defaults):
-          {{senderName}}      — e.g. "Pawel Wojcik"
+          {{senderName}}      — e.g. "Pawel Chrzanowski"
           {{senderTitle}}     — e.g. "Special Rigger | CAN USA"
           {{senderEmail}}     — e.g. "pawel@canusa.com"
           {{senderPhone}}     — e.g. "(212) 555-0180"
@@ -176,7 +176,7 @@ class TemplateEngine:
             "signature":       signature_html or "",
 
             # Sender defaults (can be overridden by template)
-            "senderName":   "Pawel Wojcik",
+            "senderName":   "Pawel Chrzanowski",
             "senderTitle":  "Special Rigger | CAN USA",
             "senderEmail":  "pawel@canusa.com",
             "senderPhone":  "(212) 555-0180",

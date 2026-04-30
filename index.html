@@ -649,6 +649,14 @@ tr:hover td{background:rgba(255,255,255,0.02)}
       </div>
     </div>
     <div class="settings-card">
+      <div style="font-weight:500;color:var(--text);font-size:13px;margin-bottom:4px">Write-with-Claude templates</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">
+        Each unique tone + angle combination used in "Write with Claude" is saved as a named template (max 20). Templates track usage so you can see which styles perform best.
+      </div>
+      <div id="write-tpl-list" style="margin-bottom:10px"></div>
+      <button class="btn" onclick="renderWriteTemplatesSettings()" style="font-size:12px">Refresh list</button>
+    </div>
+    <div class="settings-card">
       <div style="font-weight:500;color:var(--text);font-size:13px;margin-bottom:10px">Send rate throttle</div>
       <div style="display:flex;align-items:center;gap:12px"><input type="range" min="5" max="60" step="5" value="30" id="rate-slider" oninput="document.getElementById('rate-val').textContent=this.value+' / hour'" style="flex:1;accent-color:var(--amber)"/><span style="color:var(--amber);font-weight:600;min-width:80px;font-size:14px" id="rate-val">30 / hour</span></div>
     </div>
@@ -918,6 +926,7 @@ async function load(){
     userSignature=d.userSignature||'';
     
     _lastSavedAt=d.savedAt||null;
+    loadWriteTemplates(d);
     const se=document.getElementById('sig-editor');
     if(se)se.innerHTML=userSignature;
     
@@ -945,6 +954,7 @@ function startAutoRefresh(){
         htmlTemplates=d.htmlTemplates||{};
         customTemplates=d.customTemplates||[];
         userSignature=d.userSignature||'';
+        loadWriteTemplates(d);
         renderDashboard();updateGlobals();
         const el=document.getElementById('save-status');
         if(el)el.textContent='Synced '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
@@ -1046,7 +1056,7 @@ function showView(v){
   }
   if(v==='seqstudio')renderSeqStudio();
   if(v==='bulk')updateBulkCount();
-  if(v==='settings')renderTracking();
+  if(v==='settings'){renderTracking();renderWriteTemplatesSettings();}
   if(v==='alerts'){renderAlertsView();}
   updateGlobals();
 }
@@ -1439,6 +1449,127 @@ async function doSend(){
 function copyEmail(){const c=getC(selectedQueueEmail);if(!c)return;const st=sigText();navigator.clipboard.writeText(`Subject: ${document.getElementById('review-subject').value}\n\n${activeBody}${st?'\n\n'+st:''}`).then(()=>toast('Copied','blue')).catch(()=>toast('Copy failed','amber'));}
 function openInOutlook(){const c=getC(selectedQueueEmail);if(!c)return;const st=sigText();window.open(`mailto:${c.workEmail}?subject=${encodeURIComponent(document.getElementById('review-subject').value)}&body=${encodeURIComponent(activeBody+(st?'\n\n'+st:''))}`);}
 // ══════════════════════════════════════════════════════════════════
+// WRITE TEMPLATES — saved combinations of tone/angle/style
+// Max 20 templates. Shown in Settings and as chip hints in write panel.
+// ══════════════════════════════════════════════════════════════════
+
+// writeTemplates is persisted inside app state via save()
+// Format: [{name, tone, angle, length, custom, exampleSubject, exampleBody, usageCount, createdAt}]
+// Already declared as part of customTemplates — use separate key
+
+function getWriteTemplates(){
+  // Stored in a dedicated key on the state object
+  // We piggyback on the save/load cycle via a module-level var
+  return window._writeTemplates || [];
+}
+function setWriteTemplates(arr){
+  window._writeTemplates = arr;
+}
+
+// Hook into load() to restore write templates
+const _origLoad = typeof load !== 'undefined' ? load : null;
+
+function _saveWriteTemplate(name, tone, angle, length, custom, exampleSubject, exampleBody, contact){
+  const templates = getWriteTemplates();
+
+  // Check if this exact tone+angle combo already exists — update usage count
+  const existing = templates.find(t => t.tone===tone && t.angle===angle);
+  if(existing){
+    existing.usageCount = (existing.usageCount||0) + 1;
+    existing.exampleSubject = exampleSubject;  // update with latest example
+    existing.exampleBody = (exampleBody||'').slice(0,300);
+    existing.lastUsed = new Date().toISOString();
+    setWriteTemplates(templates);
+    _persistWriteTemplates(templates);
+    return;
+  }
+
+  // New combo — add it (enforce max 20)
+  if(templates.length >= 20){
+    // Remove least-used template to make room
+    templates.sort((a,b)=>(a.usageCount||0)-(b.usageCount||0));
+    const removed = templates.shift();
+    console.log('Write template limit reached — removed least-used:', removed.name);
+  }
+
+  templates.push({
+    name, tone, angle, length,
+    custom: custom||'',
+    exampleSubject,
+    exampleBody: (exampleBody||'').slice(0,300),
+    usageCount: 1,
+    createdAt: new Date().toISOString(),
+    lastUsed: new Date().toISOString(),
+  });
+  setWriteTemplates(templates);
+  _persistWriteTemplates(templates);
+}
+
+function _persistWriteTemplates(templates){
+  // Save by piggy-backing on the main state save
+  // We store in localStorage as a fallback AND send to /api/state via a patch
+  try{
+    fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        contacts, seqEmails, htmlTemplates,
+        customTemplates:customTemplates||[],
+        writeTemplates:templates,
+        userSignature, savedAt:new Date().toISOString()
+      })
+    }).catch(e=>console.warn('writeTemplates persist failed:',e));
+  }catch(e){}
+}
+
+function loadWriteTemplates(stateData){
+  // Called from load() after state is fetched
+  if(stateData && stateData.writeTemplates){
+    setWriteTemplates(stateData.writeTemplates);
+  }
+}
+
+function renderWriteTemplatesSettings(){
+  const templates = getWriteTemplates();
+  const el = document.getElementById('write-tpl-list');
+  if(!el)return;
+  if(!templates.length){
+    el.innerHTML='<div style="font-size:12px;color:var(--dim)">No templates saved yet. Use "Write with Claude" on an empty contact to create your first template.</div>';
+    return;
+  }
+  const toneLabels={direct:'Direct',informational:'Info',witty:'Witty',consultative:'Consultative'};
+  const angleLabels={'fisp-data':'FISP data','swarmp':'SWARMP risk','deadline':'Deadline urgency','credibility':'Credibility','linkedin':'LinkedIn hook'};
+  el.innerHTML=templates
+    .sort((a,b)=>(b.usageCount||0)-(a.usageCount||0))
+    .map((t,i)=>`
+      <div style="padding:10px 12px;background:var(--surface);border-radius:7px;border:1px solid var(--border);margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+          <span style="font-size:12px;font-weight:600;color:var(--violet)">${esc(t.name)}</span>
+          <span style="font-size:10px;color:var(--dim)">${t.usageCount||1}× used</span>
+          <div style="flex:1"></div>
+          <button class="btn" style="font-size:10px;padding:2px 7px;color:var(--red)" onclick="deleteWriteTemplate(${i})">Remove</button>
+        </div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px">
+          ${badge('b-tplb',toneLabels[t.tone]||t.tone)}
+          ${badge('b-tpla',angleLabels[t.angle]||t.angle)}
+          ${badge('b-t3',t.length||'short')}
+        </div>
+        ${t.exampleSubject?`<div style="font-size:11px;color:var(--muted);font-style:italic">"${esc(t.exampleSubject)}"</div>`:''}
+        ${t.custom?`<div style="font-size:10px;color:var(--dim);margin-top:3px">Custom: ${esc(t.custom)}</div>`:''}
+      </div>
+    `).join('');
+}
+
+function deleteWriteTemplate(idx){
+  const templates = getWriteTemplates();
+  if(!templates[idx])return;
+  if(!confirm('Remove template "'+templates[idx].name+'"?'))return;
+  templates.splice(idx,1);
+  setWriteTemplates(templates);
+  _persistWriteTemplates(templates);
+  renderWriteTemplatesSettings();
+  toast('Template removed','amber');
+}
+
+// ══════════════════════════════════════════════════════════════════
 // WRITE EMAIL WITH CLAUDE
 // ══════════════════════════════════════════════════════════════════
 
@@ -1480,7 +1611,7 @@ async function doWriteEmail(){
     'linkedin':     'Open with a specific reference to something on their LinkedIn profile or firm website before pivoting to the FISP angle.',
   };
 
-  const sysPrompt = `You write cold outbound emails for Pawel Wojcik (Special Rigger, CAN USA) to NYC architect firms with FISP inspection backlogs.
+  const sysPrompt = `You write cold outbound emails for Pawel Chrzanowski (Special Rigger, CAN USA) to NYC architect firms with FISP inspection backlogs.
 
 CAN USA provides SPRAT-certified rope access for FISP: 30–50% lower cost than scaffolding, 2–3 days per building, no street closures.
 
@@ -1551,15 +1682,28 @@ Write the subject line and email body now.`;
     // Apply to the contact
     document.getElementById('review-subject').value=subject||document.getElementById('review-subject').value;
     activeBody=bodyText;
-    // Save to contact record
-    updateC(selectedQueueEmail,{subjectLine:subject,emailBody:bodyText,refinedEmailBody:null,refined:false});
+
+    // Build template name from tone + angle combo
+    const toneLabels={direct:'Direct',informational:'Info',witty:'Witty',consultative:'Consultative'};
+    const angleLabels={'fisp-data':'FISP','swarmp':'SWARMP','deadline':'Urgent','credibility':'Credibility','linkedin':'LinkedIn'};
+    const tplName='Tpl '+( toneLabels[tone]||tone)+' + '+(angleLabels[angle]||angle);
+
+    // Save as a reusable template (max 20 custom templates)
+    _saveWriteTemplate(tplName, tone, angle, length, custom, subject, bodyText, c);
+
+    // Save to contact record and tag with template name
+    updateC(selectedQueueEmail,{
+      subjectLine:subject,emailBody:bodyText,
+      refinedEmailBody:null,refined:false,
+      writeTemplateName:tplName,
+    });
     renderModeTabs();renderEmailDisplay();renderSigBlock();
 
-    // Hide write panel, show refine button
+    // Hide write panel
     const wp=document.getElementById('write-panel');
     if(wp)wp.style.display='none';
     statusEl.textContent='';
-    toast('Email written — review and send or refine further','green');
+    toast('Email written as "'+tplName+'" — review and send or refine further','green');
 
   }catch(err){
     statusEl.innerHTML='<span style="color:var(--red)">'+err.message+'</span>';
@@ -2965,7 +3109,7 @@ const SIGNOFF_PATTERNS = [
   /\n\[Name\][\s\S]*/i,
   /\nCAN USA Arch Designs[\s\S]*/i,
   /\n1-888-[\s\S]*/i,
-  /\nPawel Wojcik[\s\S]*/i,
+  /\nPawel Chrzanowski[\s\S]*/i,
   /\nPawel,[\s\S]*/i,
   /\nPawel\n[\s\S]*/i,
   /\n[-–—]\s*Pawel[\s\S]*/i,
