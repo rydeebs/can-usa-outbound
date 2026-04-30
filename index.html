@@ -383,34 +383,111 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     <div id="queue-groups"></div>
   </div>
   <!-- INDIVIDUAL VIEW -->
-  <div id="queue-individual-view" style="display:none;flex:1;overflow:hidden;flex-direction:row" class="queue-wrap">
-    <div class="side-list" style="width:230px;min-width:230px">
-      <div class="side-list-hdr" style="padding:8px 10px">
-        <input class="inp" id="q-ind-search" placeholder="Search..." oninput="renderQueueIndividual()" style="width:100%;font-size:11px;padding:4px 8px;margin-bottom:6px"/>
-        <div style="display:flex;gap:4px">
-          <select class="inp" id="q-ind-tier" onchange="renderQueueIndividual()" style="flex:1;font-size:10px;padding:3px 5px">
-            <option value="all">All tiers</option>
-            <option value="1">T1</option>
-            <option value="2">T2</option>
-            <option value="3">T3</option>
-          </select>
-          <select class="inp" id="q-ind-hot" onchange="renderQueueIndividual()" style="flex:1;font-size:10px;padding:3px 5px">
-            <option value="all">All</option>
-            <option value="hot">HOT</option>
-            <option value="refined">Refined</option>
-            <option value="empty">Empty</option>
-            <option value="unknown">&lt;unknown&gt;</option>
-          </select>
-        </div>
-        <select class="inp" id="q-ind-firm" onchange="renderQueueIndividual()" style="width:100%;font-size:10px;padding:3px 5px;margin-top:4px">
-          <option value="all">All firms</option>
-        </select>
-        <div style="font-size:10px;color:var(--dim);margin-top:5px;padding:0 2px">Pending: <span id="q-pending-count-2" style="color:var(--amber);font-weight:600">0</span></div>
-      </div>
-      <div id="queue-list-items" style="overflow-y:auto;flex:1"></div>
+  <div id="queue-individual-view" style="display:none;flex:1;overflow:hidden;flex-direction:column" class="queue-wrap">
+    <div class="filter-bar" style="flex-shrink:0">
+      <input class="inp" id="q-ind-search" placeholder="Search..." oninput="renderQueueIndividual()" style="width:170px"/>
+      <select class="inp" id="q-ind-tier" onchange="renderQueueIndividual()" style="width:108px">
+        <option value="all">All tiers</option>
+        <option value="1">Tier 1</option>
+        <option value="2">Tier 2</option>
+        <option value="3">Tier 3</option>
+      </select>
+      <select class="inp" id="q-ind-hot" onchange="renderQueueIndividual()" style="width:126px">
+        <option value="all">All</option>
+        <option value="hot">HOT</option>
+        <option value="refined">Refined</option>
+        <option value="empty">Empty</option>
+        <option value="unknown">&lt;unknown&gt;</option>
+      </select>
+      <select class="inp" id="q-ind-firm" onchange="renderQueueIndividual()" style="width:165px">
+        <option value="all">All firms</option>
+      </select>
+      <select class="inp" id="q-ind-write-tpl" onchange="renderQueueIndividual()" style="width:180px">
+        <option value="all">All generated templates</option>
+      </select>
+      <span style="font-size:12px;color:var(--dim)">Pending: <span id="q-pending-count-2" style="color:var(--amber);font-weight:600">0</span></span>
     </div>
+    <div style="display:flex;flex:1;min-height:0;overflow:hidden">
+      <div class="side-list" style="width:230px;min-width:230px">
+        <div id="queue-list-items" style="overflow-y:auto;flex:1"></div>
+      </div>
+      <div class="review-panel">
+        <div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:13px" id="review-empty">Select a contact to review</div>
+        <div id="review-content" style="display:none;flex:1;overflow:hidden;flex-direction:row" class="review-panel">
+          <div class="review-main">
+            <div id="review-header" style="margin-bottom:14px"></div>
 
-</div>
+            <!-- Write with Claude panel — shown when subject/body is empty -->
+            <div id="write-panel" style="display:none">
+              <div class="write-panel">
+                <div class="write-panel-title">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                  Write email with Claude
+                  <span style="font-size:10px;font-weight:400;color:var(--dim)">— empty email detected, select style options and generate</span>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+                  <div>
+                    <div class="style-group-label">Length</div>
+                    <div class="style-chips" id="chips-length">
+                      <div class="style-chip selected" data-group="length" data-val="short" onclick="selectChip(this)">Short</div>
+                      <div class="style-chip" data-group="length" data-val="medium" onclick="selectChip(this)">Medium</div>
+                      <div class="style-chip" data-group="length" data-val="long" onclick="selectChip(this)">Long</div>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="style-group-label">Tone</div>
+                    <div class="style-chips" id="chips-tone">
+                      <div class="style-chip selected" data-group="tone" data-val="direct" onclick="selectChip(this)">Direct</div>
+                      <div class="style-chip" data-group="tone" data-val="informational" onclick="selectChip(this)">Informational</div>
+                      <div class="style-chip" data-group="tone" data-val="witty" onclick="selectChip(this)">Witty</div>
+                      <div class="style-chip" data-group="tone" data-val="consultative" onclick="selectChip(this)">Consultative</div>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="style-group-label">Opening angle</div>
+                    <div class="style-chips" id="chips-angle">
+                      <div class="style-chip selected" data-group="angle" data-val="fisp-data" onclick="selectChip(this)">FISP data</div>
+                      <div class="style-chip" data-group="angle" data-val="swarmp" onclick="selectChip(this)">SWARMP risk</div>
+                      <div class="style-chip" data-group="angle" data-val="deadline" onclick="selectChip(this)">Deadline urgency</div>
+                      <div class="style-chip" data-group="angle" data-val="credibility" onclick="selectChip(this)">Credibility</div>
+                      <div class="style-chip" data-group="angle" data-val="linkedin" onclick="selectChip(this)">LinkedIn hook</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="margin-bottom:10px">
+                  <div class="style-group-label" style="margin-bottom:4px">Custom instruction (optional)</div>
+                  <input class="inp" id="write-custom-inst" placeholder="e.g. mention the 2/21/2027 deadline specifically, reference their NYPL work..." style="width:100%;font-size:12px"/>
+                </div>
+
+                <div style="display:flex;gap:8px;align-items:center">
+                  <button class="btn btn-violet" id="btn-write" onclick="doWriteEmail()">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    Generate with Claude
+                  </button>
+                  <span id="write-status" style="font-size:12px;color:var(--dim)"></span>
+                </div>
+              </div>
+            </div>
+
+            <div style="margin-bottom:14px"><div class="section-label">Subject line</div><input class="inp" id="review-subject" style="font-weight:500;width:100%"/></div>
+            <div class="mode-tabs" id="mode-tabs"><button class="mode-tab active" onclick="setMode('orig')">Original</button></div>
+            <div id="email-display"></div><div id="sig-block"></div><div id="err-display"></div>
+            <div class="action-bar">
+              <button class="btn" id="btn-refine" onclick="doRefine()">Refine with Claude</button>
+              <button class="btn" id="btn-reset" style="display:none" onclick="resetToOrig()">Reset</button>
+              <div style="flex:1"></div>
+              <button class="btn" onclick="copyEmail()">Copy</button>
+              <button class="btn btn-amber" onclick="doApprove()">Approve</button>
+              <button class="btn btn-solid" onclick="doSend()">Send</button>
+            </div>
+          </div>
+          <div class="review-ctx" id="review-ctx"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- BULK CREATE VIEW -->
   <div id="queue-bulkcreate-view" style="display:none;flex:1;overflow-y:auto;min-height:0;padding:16px;flex-direction:column">
@@ -499,88 +576,9 @@ tr:hover td{background:rgba(255,255,255,0.02)}
       </div>
     </div>
 
-    <div id="bc-results-area"></div>
+    <div id="bc-results-area" style="margin-bottom:16px"></div>
+    <div id="bc-generated-templates-area"></div>
 
-  </div>
-    <div class="review-panel">
-      <div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:13px" id="review-empty">Select a contact to review</div>
-      <div id="review-content" style="display:none;flex:1;overflow:hidden;flex-direction:row" class="review-panel">
-        <div class="review-main">
-          <div id="review-header" style="margin-bottom:14px"></div>
-
-          <!-- Write with Claude panel — shown when subject/body is empty -->
-          <div id="write-panel" style="display:none">
-            <div class="write-panel">
-              <div class="write-panel-title">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                Write email with Claude
-                <span style="font-size:10px;font-weight:400;color:var(--dim)">— empty email detected, select style options and generate</span>
-              </div>
-
-              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
-                <!-- Length -->
-                <div>
-                  <div class="style-group-label">Length</div>
-                  <div class="style-chips" id="chips-length">
-                    <div class="style-chip selected" data-group="length" data-val="short" onclick="selectChip(this)">Short</div>
-                    <div class="style-chip" data-group="length" data-val="medium" onclick="selectChip(this)">Medium</div>
-                    <div class="style-chip" data-group="length" data-val="long" onclick="selectChip(this)">Long</div>
-                  </div>
-                </div>
-                <!-- Tone -->
-                <div>
-                  <div class="style-group-label">Tone</div>
-                  <div class="style-chips" id="chips-tone">
-                    <div class="style-chip selected" data-group="tone" data-val="direct" onclick="selectChip(this)">Direct</div>
-                    <div class="style-chip" data-group="tone" data-val="informational" onclick="selectChip(this)">Informational</div>
-                    <div class="style-chip" data-group="tone" data-val="witty" onclick="selectChip(this)">Witty</div>
-                    <div class="style-chip" data-group="tone" data-val="consultative" onclick="selectChip(this)">Consultative</div>
-                  </div>
-                </div>
-                <!-- Angle -->
-                <div>
-                  <div class="style-group-label">Opening angle</div>
-                  <div class="style-chips" id="chips-angle">
-                    <div class="style-chip selected" data-group="angle" data-val="fisp-data" onclick="selectChip(this)">FISP data</div>
-                    <div class="style-chip" data-group="angle" data-val="swarmp" onclick="selectChip(this)">SWARMP risk</div>
-                    <div class="style-chip" data-group="angle" data-val="deadline" onclick="selectChip(this)">Deadline urgency</div>
-                    <div class="style-chip" data-group="angle" data-val="credibility" onclick="selectChip(this)">Credibility</div>
-                    <div class="style-chip" data-group="angle" data-val="linkedin" onclick="selectChip(this)">LinkedIn hook</div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Custom instruction (optional) -->
-              <div style="margin-bottom:10px">
-                <div class="style-group-label" style="margin-bottom:4px">Custom instruction (optional)</div>
-                <input class="inp" id="write-custom-inst" placeholder="e.g. mention the 2/21/2027 deadline specifically, reference their NYPL work..." style="width:100%;font-size:12px"/>
-              </div>
-
-              <div style="display:flex;gap:8px;align-items:center">
-                <button class="btn btn-violet" id="btn-write" onclick="doWriteEmail()">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                  Generate with Claude
-                </button>
-                <span id="write-status" style="font-size:12px;color:var(--dim)"></span>
-              </div>
-            </div>
-          </div>
-
-          <div style="margin-bottom:14px"><div class="section-label">Subject line</div><input class="inp" id="review-subject" style="font-weight:500;width:100%"/></div>
-          <div class="mode-tabs" id="mode-tabs"><button class="mode-tab active" onclick="setMode('orig')">Original</button></div>
-          <div id="email-display"></div><div id="sig-block"></div><div id="err-display"></div>
-          <div class="action-bar">
-            <button class="btn" id="btn-refine" onclick="doRefine()">Refine with Claude</button>
-            <button class="btn" id="btn-reset" style="display:none" onclick="resetToOrig()">Reset</button>
-            <div style="flex:1"></div>
-            <button class="btn" onclick="copyEmail()">Copy</button>
-            <button class="btn btn-amber" onclick="doApprove()">Approve</button>
-            <button class="btn btn-solid" onclick="doSend()">Send</button>
-          </div>
-        </div>
-        <div class="review-ctx" id="review-ctx"></div>
-      </div>
-    </div>
   </div>
 
 <!-- ═══ SEQUENCE STUDIO ═══ -->
@@ -1538,6 +1536,36 @@ async function doSend(){
   advanceQueue();
   if(sentContact&&!sentContact.linkedinConnected)promptLinkedIn(sentContact.id);
 }
+async function sendContactNow(c){
+  const subj=(c.subjectLine||'').trim();
+  const body=(c.refinedEmailBody||c.emailBody||'').trim();
+  if(!c.workEmail||!subj||!body)throw new Error('Missing email, subject, or body');
+  const tpl=getHtmlTemplate(c.tier,c.templateUsed);
+  const htmlContent=tpl?applyHtmlTemplate(tpl.html,c,body,subj):null;
+  const r=await fetch('/api/send',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      to:c.workEmail,
+      subject:subj,
+      body,
+      html:htmlContent,
+      htmlSignature:userSignature,
+      contactId:String(c.id),
+      threadId:c.gmailThreadId||null,
+    })
+  });
+  if(!r.ok){
+    const err=await r.json().catch(()=>({detail:'Send failed'}));
+    throw new Error(err.detail||'Send failed');
+  }
+  const sendData=await r.json().catch(()=>({}));
+  updateC(c.workEmail,{
+    emailSent:true,approved:true,emailBody:body,subjectLine:subj,sequenceStep:1,
+    gmailThreadId:sendData.threadId||c.gmailThreadId||null,
+    gmailMessageId:sendData.messageId||null,
+  });
+}
 function copyEmail(){const c=getC(selectedQueueEmail);if(!c)return;const st=sigText();navigator.clipboard.writeText(`Subject: ${document.getElementById('review-subject').value}\n\n${activeBody}${st?'\n\n'+st:''}`).then(()=>toast('Copied','blue')).catch(()=>toast('Copy failed','amber'));}
 function openInOutlook(){const c=getC(selectedQueueEmail);if(!c)return;const st=sigText();window.open(`mailto:${c.workEmail}?subject=${encodeURIComponent(document.getElementById('review-subject').value)}&body=${encodeURIComponent(activeBody+(st?'\n\n'+st:''))}`);}
 // ══════════════════════════════════════════════════════════════════
@@ -1855,14 +1883,13 @@ function setQueueTab(tab){
     renderQueueGroups();
   }else if(tab==='individual'){
     if(ind)ind.style.display='flex';
+    refreshGeneratedTemplateFilters();
     renderQueueIndividual();
   }else if(tab==='bulkcreate'){
     if(bc)bc.style.display='flex';
-    // Hide the individual-review empty-state message
-    const re=document.getElementById('review-empty');
-    if(re)re.style.display='none';
     _populateBcFirmDropdown();
     renderBulkCreate();
+    renderBcGeneratedTemplates();
   }
 }
 
@@ -2032,6 +2059,7 @@ function getQueueFiltered(){
   const ft=document.getElementById('q-ind-tier')?.value||'all';
   const fh=document.getElementById('q-ind-hot')?.value||'all';
   const ff=document.getElementById('q-ind-firm')?.value||'all';
+  const fw=document.getElementById('q-ind-write-tpl')?.value||'all';
   return contacts
     .filter(c=>!c.emailSent)
     .filter(c=>ft==='all'||String(c.tier)===ft)
@@ -2044,6 +2072,7 @@ function getQueueFiltered(){
       return true;
     })
     .filter(c=>ff==='all'||c.firmName===ff)
+    .filter(c=>fw==='all'||(c.writeTemplateName||'')===fw)
     .filter(c=>!s||`${c.fullName||''} ${c.firstName||''} ${c.lastName||''} ${c.firmName||''}`.toLowerCase().includes(s))
     .sort((a,b)=>a.tier-b.tier||b.totalUnfiled-a.totalUnfiled);
 }
@@ -3668,6 +3697,8 @@ Rules:
   save();
   if(btn){btn.disabled=false;btn.textContent='Generate';}
   if(statusEl) statusEl.textContent = done+' done'+(failed?' ('+failed+' failed)':'');
+  renderBcGeneratedTemplates();
+  refreshGeneratedTemplateFilters();
   toast('Group '+(groupIdx+1)+': '+done+' emails generated as "'+tplName+'"','green');
 }
 
@@ -3676,6 +3707,81 @@ function _populateBcFirmDropdown(){
   const el=document.getElementById('bc-firm');
   if(!el)return;
   el.innerHTML='<option value="all">All firms</option>'+firms.map(f=>'<option value="'+esc(f)+'">'+esc(f)+'</option>').join('');
+}
+
+function getGeneratedTemplateStats(){
+  const map={};
+  contacts.filter(c=>!c.emailSent&&c.writeTemplateName).forEach(c=>{
+    const name=c.writeTemplateName;
+    if(!map[name])map[name]={name,total:0,ready:0};
+    map[name].total++;
+    const hasBody=(c.refinedEmailBody||c.emailBody||'').trim();
+    if((c.subjectLine||'').trim()&&hasBody)map[name].ready++;
+  });
+  return Object.values(map).sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
+}
+
+function refreshGeneratedTemplateFilters(){
+  const el=document.getElementById('q-ind-write-tpl');
+  if(!el)return;
+  const current=el.value||'all';
+  const stats=getGeneratedTemplateStats();
+  el.innerHTML='<option value="all">All generated templates</option>'
+    +stats.map(s=>'<option value="'+esc(s.name)+'">'+esc(s.name)+' ('+s.total+')</option>').join('');
+  const hasCurrent=stats.some(s=>s.name===current);
+  el.value=hasCurrent?current:'all';
+}
+
+function reviewGeneratedTemplate(name){
+  queueTab='individual';
+  setQueueTab('individual');
+  const sel=document.getElementById('q-ind-write-tpl');
+  if(sel){sel.value=name;}
+  renderQueueIndividual();
+}
+
+async function sendGeneratedTemplate(name){
+  const list=contacts.filter(c=>!c.emailSent&&(c.writeTemplateName||'')===name)
+    .filter(c=>(c.subjectLine||'').trim()&&(c.refinedEmailBody||c.emailBody||'').trim());
+  if(!list.length){toast('No sendable contacts in this template','amber');return;}
+  if(!confirm('Send '+list.length+' emails for "'+name+'"?'))return;
+  let done=0,failed=0;
+  for(let i=0;i<list.length;i++){
+    try{
+      await sendContactNow(list[i]);
+      done++;
+    }catch(_e){
+      failed++;
+    }
+    if(i<list.length-1)await new Promise(r=>setTimeout(r,500));
+  }
+  save();
+  renderBulkCreate();
+  renderBcGeneratedTemplates();
+  refreshGeneratedTemplateFilters();
+  updateGlobals();
+  toast('Sent '+done+' from "'+name+'"'+(failed?' ('+failed+' failed)':''),failed?'amber':'green');
+}
+
+function renderBcGeneratedTemplates(){
+  const el=document.getElementById('bc-generated-templates-area');
+  if(!el)return;
+  const stats=getGeneratedTemplateStats();
+  if(!stats.length){
+    el.innerHTML='<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;font-size:12px;color:var(--dim)">No generated group templates yet. Generate a group or bulk batch first.</div>';
+    return;
+  }
+  el.innerHTML='<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden">'
+    +'<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.07em">Generated templates</div>'
+    +stats.map(s=>'<div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<span style="font-size:12px;font-weight:600;color:var(--violet)">'+esc(s.name)+'</span>'
+      +'<span style="font-size:11px;color:var(--muted)">'+s.total+' contacts</span>'
+      +'<span style="font-size:11px;color:var(--dim)">'+s.ready+' ready</span>'
+      +'<div style="flex:1"></div>'
+      +'<button class="btn" style="font-size:11px;padding:4px 10px" onclick="reviewGeneratedTemplate(this.dataset.name)" data-name="'+esc(s.name)+'">Review</button>'
+      +'<button class="btn btn-solid" style="font-size:11px;padding:4px 10px" onclick="sendGeneratedTemplate(this.dataset.name)" data-name="'+esc(s.name)+'">Send</button>'
+      +'</div>').join('')
+    +'</div>';
 }
 
 function getBcFiltered(){
@@ -3732,6 +3838,7 @@ function renderBulkCreate(){
         +'</tr>';
     }).join('')
     +'</tbody></table></div>';
+  renderBcGeneratedTemplates();
 }
 
 async function doBulkCreate(){
@@ -3844,6 +3951,8 @@ CAN USA heritage talking points (use when relevant, adapt freely, never quote ve
   btn.disabled=false;
   stopBtn.style.display='none';
   statusEl.textContent='';
+  renderBcGeneratedTemplates();
+  refreshGeneratedTemplateFilters();
   toast('Generated '+done+' emails'+(failed?' ('+failed+' failed)':'')+' as "'+tplName+'"','green');
 }
 
