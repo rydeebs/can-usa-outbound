@@ -7,6 +7,7 @@ See AGENTS.md for setup. See SOUL.md for Pawel's voice.
 from __future__ import annotations
 import logging
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -69,6 +70,15 @@ def process_reply(
         check_new_inbound(reply, all_contacts, graph)
         log.info(f"Unknown sender {reply['from_email']} — checked for inbound signal")
         return
+
+    # Mark as replied immediately for known contacts so dashboard/status rollups
+    # reflect inbound activity even when response is queued for manual review.
+    store.update(contact["id"], {
+        "replied": True,
+        "lastReplyFrom": reply.get("from_email", ""),
+        "lastReplyText": (reply.get("body", "") or "")[:500],
+        "lastReplyAt": datetime.now(timezone.utc).isoformat(),
+    })
 
     # ── Step 1: Route ────────────────────────────────────────────────────
     route = classify_reply(reply_text=reply["body"], contact=contact)
@@ -230,19 +240,25 @@ def check_inbox() -> None:
     # get_new_replies now returns ALL unread mail (not just Re: subjects)
     # so we can detect new inbound enquiries too
     replies = graph.get_new_replies()
-    log.info(f"Found {len(replies)} unread messages")
+    processed_ids = store.get_processed_inbound_ids()
+    log.info(f"Found {len(replies)} recent inbox messages")
 
     for reply in replies:
         try:
+            message_id = reply.get("message_id", "")
+            if message_id and message_id in processed_ids:
+                continue
             # Check for bounce/delivery failure notifications FIRST
             bounced = handle_bounce(reply, store, graph)
             if bounced:
                 log.info(f"Bounce handled for {bounced} — skipping normal processing")
                 graph.mark_as_read(reply["message_id"])
+                store.mark_inbound_processed(reply["message_id"])
                 continue
 
             process_reply(graph, store, engine, tpl, reply, all_contacts)
             graph.mark_as_read(reply["message_id"])
+            store.mark_inbound_processed(reply["message_id"])
         except Exception as e:
             log.error(
                 f"Error processing message from {reply.get('from_email','?')}: {e}",

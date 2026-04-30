@@ -2699,7 +2699,17 @@ function sigText(){
     .replace(/&nbsp;/g,' ').replace(/\n{3,}/g,'\n\n').trim();
 }
 function renderTracking(){
-  const rows=[{l:'Open tracking (1x1 pixel)',d:'Embedded in every email',on:true},{l:'Link click tracking',d:'Redirect URLs on all links',on:true},{l:'Reply detection (Graph API)',d:'Inbox polling every 15 min',on:msConnected},{l:'Bounce detection',d:'Graph API delivery reports',on:msConnected}];
+  // Backward-compatible: older builds used msConnected (Graph API).
+  // If not present, default to true so Settings does not crash the app.
+  const inboxConnected=(typeof window.msConnected!=='undefined')
+    ? !!window.msConnected
+    : true;
+  const rows=[
+    {l:'Open tracking (1x1 pixel)',d:'Embedded in every email',on:true},
+    {l:'Link click tracking',d:'Redirect URLs on all links',on:true},
+    {l:'Reply detection (Gmail API)',d:'Inbox polling every 15 min',on:inboxConnected},
+    {l:'Bounce detection',d:'Mailbox bounce notifications',on:inboxConnected}
+  ];
   document.getElementById('tracking-card').innerHTML=`<div style="font-weight:500;color:var(--text);font-size:13px;margin-bottom:10px">Tracking</div>`+rows.map(t=>`<div class="track-row"><div class="track-dot${t.on?' on':''}">${t.on?'<div class="track-inner"></div>':''}</div><div><div style="font-size:12px;color:${t.on?'var(--text)':'var(--muted)'}">${t.l}</div><div style="font-size:10px;color:var(--dim);margin-top:1px">${t.d}</div></div></div>`).join('');
 }
 

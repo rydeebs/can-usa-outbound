@@ -150,6 +150,36 @@ class ContactStore:
     def get_for_review(self) -> list[dict]:
         return [c for c in self.all() if c.get("pendingReview")]
 
+    def get_processed_inbound_ids(self) -> set[str]:
+        """
+        Returns message IDs already processed by the agent.
+        Stored in app_state to avoid reprocessing read/unread inbox scans.
+        """
+        state = _read_state()
+        ids = state.get("processedInboundIds", [])
+        if not isinstance(ids, list):
+            return set()
+        return {str(x) for x in ids if x}
+
+    def mark_inbound_processed(self, message_id: str) -> None:
+        """
+        Persists an inbound message ID as processed.
+        Keeps a bounded rolling window to prevent unbounded growth.
+        """
+        if not message_id:
+            return
+        state = _read_state()
+        ids = state.get("processedInboundIds", [])
+        if not isinstance(ids, list):
+            ids = []
+        mid = str(message_id)
+        if mid in ids:
+            return
+        ids.append(mid)
+        # Keep the newest 2000 message IDs.
+        state["processedInboundIds"] = ids[-2000:]
+        _write_state(state)
+
     # ── Writing ────────────────────────────────────────────────────────────
 
     def update(self, contact_id: int, changes: dict) -> None:

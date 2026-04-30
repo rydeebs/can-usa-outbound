@@ -89,14 +89,16 @@ class GraphClient:
 
     def get_new_replies(self) -> list[dict]:
         """
-        Returns all unread messages in the inbox.
+        Returns recent inbox messages (read + unread).
+        main.py deduplicates using persisted processedInboundIds.
         alerter.py decides which ones are replies vs. new inbounds.
         """
         try:
             result = self._service.users().messages().list(
                 userId="me",
-                labelIds=["INBOX", "UNREAD"],
-                maxResults=50,
+                labelIds=["INBOX"],
+                q="newer_than:14d",
+                maxResults=200,
             ).execute()
         except Exception as e:
             log.error(f"Gmail list error: {e}")
