@@ -47,7 +47,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* BADGES */
 .badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:12px;font-size:11px;font-weight:500;line-height:1.4;white-space:nowrap}
 .b-t1{background:var(--amber-bg);color:#C8902A}.b-t2{background:var(--blue-bg);color:var(--blue)}.b-t3{background:rgba(255,255,255,0.06);color:var(--muted)}
-.b-sent{background:var(--green-bg);color:var(--green)}.b-opened{background:var(--blue-bg);color:var(--blue)}.b-replied{background:var(--teal-bg);color:var(--teal)}
+.b-sent{background:var(--green-bg);color:var(--green)}.b-opened{background:var(--blue-bg);color:var(--blue)}.b-replied{background:var(--teal-bg);color:var(--teal)}.b-bounced{background:var(--red-bg);color:var(--red)}
 .b-pending{background:rgba(255,255,255,0.05);color:var(--dim)}.b-swarmp{background:var(--red-bg);color:var(--red)}.b-approved{background:var(--amber-bg);color:var(--amber)}
 .b-tpla{background:var(--violet-bg);color:var(--violet)}.b-tplb{background:var(--amber-bg);color:#C8902A}.b-tplc{background:var(--teal-bg);color:var(--teal)}
 /* STATS */
@@ -873,7 +873,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
       <button class="sub-tab"        id="atab-hot"     onclick="setAlertTab('hot')">🟢 Hot leads</button>
       <button class="sub-tab"        id="atab-risk"    onclick="setAlertTab('risk')">🔴 At risk</button>
       <button class="sub-tab"        id="atab-inbound" onclick="setAlertTab('inbound')">📬 Inbound</button>
-      <button class="sub-tab"        id="atab-bounce"  onclick="setAlertTab('bounce')">⚠️ Bounced</button>
+      <button class="sub-tab"        id="atab-addressnotfound"  onclick="setAlertTab('addressnotfound')">⚠️ Address not found</button>
     </div>
     <div style="flex:1"></div>
     <button class="btn" onclick="markAlertsRead();renderAlertsView()">Mark all read</button>
@@ -1143,6 +1143,7 @@ function updateC(id,ch){
 }
 function cleanEmDashes(t){return(t||'').replace(/ \u2014 /g,', ');}
 function statusBadge(c){
+  if(c.bounced)return badge('b-bounced','Bounced');
   if(c.replied)return badge('b-replied','Replied');if(c.opened)return badge('b-opened','Opened');
   if(c.emailSent)return badge('b-sent','Sent');if(c.approved)return badge('b-approved','Approved');
   return badge('b-pending','Pending');
@@ -3191,11 +3192,11 @@ function toggleAlertPanel(){
 
 function setAlertTab(tab){
   _alertTab=tab;
-  ['all','hot','risk','inbound','bounce'].forEach(t=>{
+  ['all','hot','risk','inbound','addressnotfound'].forEach(t=>{
     const btn=document.getElementById('atab-'+t);
     if(btn)btn.classList.toggle('active',t===tab);
   });
-  if(tab==='bounce'){renderBouncedView();}
+  if(tab==='addressnotfound'){renderAddressNotFoundView();}
   else{renderAlertsView();}
 }
 
@@ -3216,11 +3217,11 @@ async function loadAlerts(){
 function renderAlertsView(){
   const el=document.getElementById('alerts-tab-body');if(!el)return;
   const filtered=_allAlerts.filter(a=>{
-    if(_alertTab==='all')return a.type!=='BOUNCE';
+    if(_alertTab==='all')return a.type!=='BOUNCE'&&a.type!=='ADDRESS_NOT_FOUND';
     if(_alertTab==='hot')return a.type==='HOT_LEAD';
     if(_alertTab==='risk')return a.type==='AT_RISK';
     if(_alertTab==='inbound')return a.type==='NEW_INBOUND';
-    if(_alertTab==='bounce')return a.type==='BOUNCE';
+    if(_alertTab==='addressnotfound')return a.type==='ADDRESS_NOT_FOUND'||a.type==='BOUNCE';
     return true;
   });
   if(!filtered.length){
@@ -3233,8 +3234,9 @@ function renderAlertsView(){
 function _renderAlertCards(el,alerts,showActions){
   el.innerHTML=alerts.map(a=>{
     const isHot=a.type==='HOT_LEAD', isRisk=a.type==='AT_RISK', isInbound=a.type==='NEW_INBOUND';
-    const typeCls=isHot?'alert-type-hot':isRisk?'alert-type-risk':'alert-type-inbound';
-    const typeLabel=isHot?'🟢 Hot lead':isRisk?'🔴 At risk':'📬 New inbound';
+    const isAddrNF=a.type==='ADDRESS_NOT_FOUND'||a.type==='BOUNCE';
+    const typeCls=isHot?'alert-type-hot':isRisk?'alert-type-risk':isAddrNF?'alert-type-risk':'alert-type-inbound';
+    const typeLabel=isHot?'🟢 Hot lead':isRisk?'🔴 At risk':isAddrNF?'⚠️ Address not found':'📬 New inbound';
     const dt=new Date(a.timestamp);
     const timeStr=dt.toLocaleDateString([],{month:'short',day:'numeric'})+' '+dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
     const c=a.contact||{};
@@ -3346,21 +3348,21 @@ function copyToClipboard(text){
   navigator.clipboard.writeText(text).then(()=>toast('Copied: '+text,'blue'));
 }
 
-function renderBouncedView(){
+function renderAddressNotFoundView(){
   const el=document.getElementById('alerts-tab-body');if(!el)return;
-  el.innerHTML='<div style="text-align:center;padding:40px;color:var(--dim);font-size:13px">Loading bounced contacts...</div>';
+  el.innerHTML='<div style="text-align:center;padding:40px;color:var(--dim);font-size:13px">Loading address-not-found contacts...</div>';
   fetch('/api/bounces')
     .then(r=>r.json())
     .then(data=>{
       const bounces=data.bounces||[];
       if(!bounces.length){
-        el.innerHTML='<div style="text-align:center;padding:60px;color:var(--dim);font-size:13px">No bounced contacts yet.<br/><span style="font-size:11px;margin-top:6px;display:block">When the agent detects a delivery failure from mailer-daemon, the contact is automatically removed and logged here.</span></div>';
+        el.innerHTML='<div style="text-align:center;padding:60px;color:var(--dim);font-size:13px">No address-not-found contacts yet.<br/><span style="font-size:11px;margin-top:6px;display:block">When Gmail returns "Address not found" from mailer-daemon@googlemail.com, the contact is marked as bounced and logged here for later correction.</span></div>';
         return;
       }
       el.innerHTML='<div style="margin-bottom:14px;padding:10px 14px;background:var(--surface);border-radius:8px;border:1px solid var(--border)">'
         +'<div style="font-size:12px;color:var(--muted);line-height:1.6">'
-        +'<strong style="color:var(--text)">'+bounces.length+' bounced contacts</strong> — removed from your contacts list and excluded from all future sends. '
-        +'These email addresses were confirmed invalid by Gmail delivery system.'
+        +'<strong style="color:var(--text)">'+bounces.length+' address-not-found contacts</strong> — kept in your contacts list for research and marked as bounced/paused for safety. '
+        +'These emails were confirmed invalid by Gmail delivery notifications.'
         +'</div></div>'
         +bounces.map(b=>{
           const dt=new Date(b.bounced_at);

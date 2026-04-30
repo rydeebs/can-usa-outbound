@@ -1,11 +1,11 @@
 """
-bouncer.py — Hard bounce detection and contact removal.
+bouncer.py — Hard bounce detection (address not found).
 
 Detects messages from mailer-daemon / delivery failure notifications,
-extracts the invalid email address, removes the contact from app_state,
-and logs the removed contact to a permanent bounces table in Postgres.
+extracts the invalid email address, marks the contact as bounced in app_state,
+and logs the event to a permanent bounces table in Postgres.
 
-Called from main.py for every unread message before other processing.
+Called from main.py for every inbox message before other processing.
 """
 from __future__ import annotations
 
@@ -207,7 +207,7 @@ def handle_bounce(
     1. Checks if the message is a bounce notification
     2. Extracts the bounced email address
     3. Finds the contact in app_state
-    4. Removes them from contacts
+    4. Marks them as bounced in contacts
     5. Logs to bounced_contacts table
     6. Creates an alert for the platform UI
 
@@ -235,27 +235,38 @@ def handle_bounce(
         )
         return bounced_email
 
-    # Log to Postgres before removing
+    # Log to Postgres
     _log_bounce(contact, f"Hard bounce — address not found. Notification: {body[:300]}")
 
-    # Remove from contacts in app_state
+    # Keep contact in app_state, but mark as bounced/inactive.
+    # This preserves campaign history and keeps sent counts accurate.
     try:
         state = _read_app_state()
         contacts = state.get("contacts", [])
-        before = len(contacts)
-        contacts = [
-            c for c in contacts
-            if c.get("workEmail", "").lower() != bounced_email
-        ]
-        after = len(contacts)
-        if before != after:
+        updated = False
+        for i, c in enumerate(contacts):
+            if c.get("workEmail", "").lower() == bounced_email:
+                contacts[i] = {
+                    **c,
+                    "bounced": True,
+                    "bounceReason": "Address not found",
+                    "bouncedAt": datetime.now(timezone.utc).isoformat(),
+                    # Keep this counted in sent metrics even if data was inconsistent
+                    "emailSent": True if c.get("emailSent") is not True else c.get("emailSent"),
+                    # Prevent any further sequence sends
+                    "paused": True,
+                    "approved": False,
+                }
+                updated = True
+                break
+        if updated:
             state["contacts"] = contacts
             _write_app_state(state)
-            log.info(f"Removed bounced contact {bounced_email} from contacts ({before} → {after})")
+            log.info(f"Marked bounced contact {bounced_email} (kept in contacts).")
         else:
-            log.warning(f"Contact {bounced_email} not found in state for removal")
+            log.warning(f"Contact {bounced_email} not found in state for bounce update")
     except Exception as e:
-        log.error(f"Error removing bounced contact: {e}", exc_info=True)
+        log.error(f"Error marking bounced contact: {e}", exc_info=True)
 
     # Write to alerts log so it shows in the platform Alerts tab
     _write_bounce_alert(contact, body)
@@ -267,16 +278,16 @@ def handle_bounce(
         try:
             graph.send_email(
                 to=os.environ["ALERT_EMAIL"],
-                subject=f"⚠️ Bounced email — {name} at {firm} removed",
+                subject=f"⚠️ Address not found — {name} at {firm}",
                 body=(
-                    f"Hard bounce detected and contact removed.\n\n"
+                    f"Hard bounce detected (address not found).\n\n"
                     f"Email:   {bounced_email}\n"
                     f"Contact: {name}\n"
                     f"Firm:    {firm}\n"
                     f"Tier:    {contact.get('tier')}\n\n"
                     f"Bounce notification:\n{body[:800]}\n\n"
-                    f"The contact has been removed from your contacts list and logged "
-                    f"in the Bounced contacts log (Alerts tab → Bounced)."
+                    f"The contact was kept in your list, marked as bounced, and paused "
+                    f"for future sends. Logged under Alerts → Address not found."
                 ),
             )
         except Exception as e:
@@ -342,9 +353,9 @@ def _write_bounce_alert(contact: dict, bounce_body: str) -> None:
 
         alert = {
             "id":        f"bounce_{email.replace('@','_')}_{datetime.now(timezone.utc).isoformat()}",
-            "type":      "BOUNCE",
+            "type":      "ADDRESS_NOT_FOUND",
             "emoji":     "⚠️",
-            "title":     f"Bounced — {name} at {firm} removed",
+            "title":     f"Address not found — {name} at {firm}",
             "detail":    f"Email address not found: {email}",
             "subject":   "Hard bounce — address not found",
             "contact":   {
