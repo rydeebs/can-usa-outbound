@@ -1124,6 +1124,12 @@ function toast(msg,type='green'){
 }
 function badge(cls,txt){return`<span class="badge ${cls}">${txt}</span>`;}
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function isAddressNotFound(c){
+  if(!c)return false;
+  if(c.bounced===true||c.bounced==='true'||c.bounced===1||c.bounced==='1')return true;
+  const reason=((c.bounceReason||'')+' '+(c.lastBounceReason||'')).toLowerCase();
+  return reason.includes('address not found')||reason.includes('hard bounce')||reason.includes('undeliverable');
+}
 function getC(id){
   // Primary: match by email string (stored in data-email on sidebar items)
   if(typeof id==='string'&&id.includes('@'))
@@ -1143,7 +1149,7 @@ function updateC(id,ch){
 }
 function cleanEmDashes(t){return(t||'').replace(/ \u2014 /g,', ');}
 function statusBadge(c){
-  if(c.bounced)return badge('b-bounced','Bounced');
+  if(isAddressNotFound(c))return badge('b-bounced','Bounced');
   if(c.replied)return badge('b-replied','Replied');if(c.opened)return badge('b-opened','Opened');
   if(c.emailSent)return badge('b-sent','Sent');if(c.approved)return badge('b-approved','Approved');
   return badge('b-pending','Pending');
@@ -2694,8 +2700,8 @@ function toggleTierExpand(t){
 
 function renderDashboard(){
   const sent=contacts.filter(c=>c.emailSent);
-  const delivered=sent.filter(c=>!c.bounced);
-  const op=delivered.filter(c=>c.opened).length,rp=delivered.filter(c=>c.replied).length,bo=sent.filter(c=>c.bounced).length;
+  const delivered=sent.filter(c=>!isAddressNotFound(c));
+  const op=delivered.filter(c=>c.opened).length,rp=delivered.filter(c=>c.replied).length,bo=sent.filter(c=>isAddressNotFound(c)).length;
   const deliveredCount=delivered.length;
   document.getElementById('dash-top').innerHTML=[
     {l:'Emails sent',v:sent.length,c:'var(--text)'},{l:'Open rate',v:(deliveredCount?Math.round(op/deliveredCount*100):0)+'%',c:'var(--blue)',s:'vs 6% avg'},
@@ -2707,7 +2713,7 @@ function renderDashboard(){
   [1,2,3].forEach(t=>{
     const tc=contacts.filter(c=>c.tier===t);
     const ts=tc.filter(c=>c.emailSent);
-    const td=ts.filter(c=>!c.bounced);
+    const td=ts.filter(c=>!isAddressNotFound(c));
     const tt=td.length||1;
     const o=td.filter(c=>c.opened).length;
     const r=td.filter(c=>c.replied).length;
@@ -2728,7 +2734,7 @@ function renderDashboard(){
       const tplInfo=TPL[tpl]||{label:'Template '+tpl,cls:'b-tpl'+tpl.toLowerCase()};
       const tpc=tc.filter(c=>(c.templateUsed||'B')===tpl);
       const tps=tpc.filter(c=>c.emailSent);
-      const tpd=tps.filter(c=>!c.bounced);
+      const tpd=tps.filter(c=>!isAddressNotFound(c));
       const tpt=tpd.length||1;
       const tpo=tpd.filter(c=>c.opened).length;
       const tpr=tpd.filter(c=>c.replied).length;
@@ -3352,43 +3358,125 @@ function copyToClipboard(text){
   navigator.clipboard.writeText(text).then(()=>toast('Copied: '+text,'blue'));
 }
 
+function getAddressNotFoundFiltered(){
+  const firm=(document.getElementById('anf-firm')?.value||'all');
+  const tier=(document.getElementById('anf-tier')?.value||'all');
+  const q=(document.getElementById('anf-search')?.value||'').toLowerCase().trim();
+  return contacts
+    .filter(c=>c.bounced)
+    .filter(c=>firm==='all'||(c.firmName||'')===firm)
+    .filter(c=>tier==='all'||String(c.tier)===tier)
+    .filter(c=>!q||`${c.fullName||''} ${c.firstName||''} ${c.lastName||''} ${c.firmName||''} ${c.workEmail||''}`.toLowerCase().includes(q))
+    .sort((a,b)=>a.tier-b.tier||(a.firmName||'').localeCompare(b.firmName||''));
+}
+
+function bulkUpdateAddressAlias(){
+  const filtered=getAddressNotFoundFiltered();
+  if(!filtered.length){toast('No bounced contacts match current filters','amber');return;}
+  const newDomain=(document.getElementById('anf-new-domain')?.value||'').trim().toLowerCase();
+  if(!newDomain){toast('Enter the correct email domain first','amber');return;}
+  if(!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(newDomain)){toast('Invalid domain format','amber');return;}
+  if(!confirm('Update domain to @'+newDomain+' for '+filtered.length+' filtered bounced contacts?'))return;
+  const idSet=new Set(filtered.map(c=>String(c.id)));
+  let updated=0;
+  contacts=contacts.map(c=>{
+    if(!idSet.has(String(c.id)))return c;
+    const local=(c.workEmail||'').split('@')[0]||'';
+    if(!local)return c;
+    updated++;
+    return {...c,workEmail:(local+'@'+newDomain).toLowerCase()};
+  });
+  save();
+  renderAddressNotFoundView();
+  toast('Updated '+updated+' emails to @'+newDomain,'green');
+}
+
+async function bulkResendAddressNotFound(){
+  const filtered=getAddressNotFoundFiltered();
+  if(!filtered.length){toast('No bounced contacts match current filters','amber');return;}
+  const sendable=filtered.filter(c=>(c.subjectLine||'').trim()&&(c.refinedEmailBody||c.emailBody||'').trim());
+  if(!sendable.length){toast('No sendable contacts in current filter','amber');return;}
+  if(!confirm('Resend initial email to '+sendable.length+' filtered contacts now?'))return;
+  let done=0,failed=0;
+  for(let i=0;i<sendable.length;i++){
+    const c=sendable[i];
+    try{
+      await sendContactNow(c);
+      updateC(c.id,{bounced:false,bounceReason:null,bouncedAt:null,paused:false,approved:false});
+      done++;
+    }catch(_e){
+      failed++;
+    }
+    if(i<sendable.length-1)await new Promise(r=>setTimeout(r,500));
+  }
+  renderAddressNotFoundView();
+  renderDashboard();
+  updateGlobals();
+  toast('Resent '+done+' contacts'+(failed?' ('+failed+' failed)':''),failed?'amber':'green');
+}
+
 function renderAddressNotFoundView(){
   const el=document.getElementById('alerts-tab-body');if(!el)return;
-  el.innerHTML='<div style="text-align:center;padding:40px;color:var(--dim);font-size:13px">Loading address-not-found contacts...</div>';
-  fetch('/api/bounces')
-    .then(r=>r.json())
-    .then(data=>{
-      const bounces=data.bounces||[];
-      if(!bounces.length){
-        el.innerHTML='<div style="text-align:center;padding:60px;color:var(--dim);font-size:13px">No address-not-found contacts yet.<br/><span style="font-size:11px;margin-top:6px;display:block">When Gmail returns "Address not found" from mailer-daemon@googlemail.com, the contact is marked as bounced and logged here for later correction.</span></div>';
-        return;
-      }
-      el.innerHTML='<div style="margin-bottom:14px;padding:10px 14px;background:var(--surface);border-radius:8px;border:1px solid var(--border)">'
-        +'<div style="font-size:12px;color:var(--muted);line-height:1.6">'
-        +'<strong style="color:var(--text)">'+bounces.length+' address-not-found contacts</strong> — kept in your contacts list for research and marked as bounced/paused for safety. '
-        +'These emails were confirmed invalid by Gmail delivery notifications.'
-        +'</div></div>'
-        +bounces.map(b=>{
-          const dt=new Date(b.bounced_at);
-          const timeStr=dt.toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'})+' '+dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-          const tierBadge=b.tier?badge('b-t'+b.tier,'T'+b.tier):'';
-          return '<div class="alert-card" style="border-radius:8px;margin-bottom:8px;border:1px solid rgba(192,80,80,0.2);background:rgba(192,80,80,0.04)">'
-            +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">'
-            +'<span style="font-size:11px;font-weight:600;color:var(--red)">⚠️ Hard bounce — removed</span>'
-            +tierBadge
-            +'<span style="flex:1"></span>'
-            +'<span style="font-size:10px;color:var(--dim)">'+timeStr+'</span>'
-            +'</div>'
-            +'<div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:2px">'+esc(b.full_name||'')+'</div>'
-            +'<div style="font-size:12px;color:var(--muted);margin-bottom:3px">'+esc(b.firm_name||'')+'</div>'
-            +'<div style="font-size:11px;color:var(--dim);font-family:Menlo,monospace">'+esc(b.email||'')+'</div>'
-            +(b.bounce_reason?'<div style="font-size:10px;color:var(--dim);margin-top:4px;line-height:1.5;font-style:italic">'+esc(b.bounce_reason.slice(0,120))+'</div>':'')
-            +'</div>';
-        }).join('');
-    })
-    .catch(e=>{
-      el.innerHTML='<div style="text-align:center;padding:40px;color:var(--red);font-size:13px">Failed to load bounced contacts: '+e.message+'</div>';
-    });
+  const bounced=contacts.filter(c=>c.bounced);
+  if(!bounced.length){
+    el.innerHTML='<div style="text-align:center;padding:60px;color:var(--dim);font-size:13px">No address-not-found contacts yet.<br/><span style="font-size:11px;margin-top:6px;display:block">When Gmail returns "Address not found" from mailer-daemon@googlemail.com, the contact is marked as bounced and shown here.</span></div>';
+    return;
+  }
+  const priorFirm=document.getElementById('anf-firm')?.value||'all';
+  const priorTier=document.getElementById('anf-tier')?.value||'all';
+  const priorSearch=document.getElementById('anf-search')?.value||'';
+  const firms=[...new Set(bounced.map(c=>c.firmName).filter(Boolean))].sort();
+
+  el.innerHTML='<div style="margin-bottom:12px;padding:10px 14px;background:var(--surface);border-radius:8px;border:1px solid var(--border)">'
+    +'<div style="font-size:12px;color:var(--muted);line-height:1.6"><strong style="color:var(--text)">'+bounced.length+' address-not-found contacts</strong> — kept in contacts for correction and paused from future sends.</div>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'
+      +'<input class="inp" id="anf-search" placeholder="Search contact, firm, email..." style="width:220px;font-size:12px" value="'+esc(priorSearch)+'" oninput="renderAddressNotFoundView()"/>'
+      +'<select class="inp" id="anf-firm" style="width:220px;font-size:12px" onchange="renderAddressNotFoundView()">'
+        +'<option value="all">All firms</option>'
+        +firms.map(f=>'<option value="'+esc(f)+'"'+(priorFirm===f?' selected':'')+'>'+esc(f)+'</option>').join('')
+      +'</select>'
+      +'<select class="inp" id="anf-tier" style="width:110px;font-size:12px" onchange="renderAddressNotFoundView()">'
+        +'<option value="all"'+(priorTier==='all'?' selected':'')+'>All tiers</option>'
+        +'<option value="1"'+(priorTier==='1'?' selected':'')+'>Tier 1</option>'
+        +'<option value="2"'+(priorTier==='2'?' selected':'')+'>Tier 2</option>'
+        +'<option value="3"'+(priorTier==='3'?' selected':'')+'>Tier 3</option>'
+      +'</select>'
+      +'<span style="font-size:12px;color:var(--dim)">Filtered: <span id="anf-count" style="color:var(--amber);font-weight:600">0</span></span>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;padding:10px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.02)">'
+      +'<span style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em">Fix domain alias</span>'
+      +'<input class="inp" id="anf-new-domain" placeholder="correct domain, e.g. thefalcongroup.com" style="width:260px;font-size:12px"/>'
+      +'<button class="btn" style="font-size:12px" onclick="bulkUpdateAddressAlias()">Update filtered emails</button>'
+      +'<div style="flex:1"></div>'
+      +'<button class="btn btn-solid" style="font-size:12px" onclick="bulkResendAddressNotFound()">Bulk resend initial email</button>'
+    +'</div>'
+    +'<div id="anf-list"></div>';
+
+  const filtered=getAddressNotFoundFiltered();
+  const countEl=document.getElementById('anf-count');if(countEl)countEl.textContent=filtered.length;
+  const listEl=document.getElementById('anf-list');if(!listEl)return;
+  if(!filtered.length){
+    listEl.innerHTML='<div style="text-align:center;padding:40px;color:var(--dim);font-size:13px">No contacts match these filters.</div>';
+    return;
+  }
+  listEl.innerHTML=filtered.map(c=>{
+    const dt=c.bouncedAt?new Date(c.bouncedAt):null;
+    const timeStr=dt&&!Number.isNaN(dt.getTime())?dt.toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'})+' '+dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'—';
+    const name=(c.fullName||(c.firstName+' '+c.lastName)).trim()||'Unknown contact';
+    return '<div class="alert-card" style="border-radius:8px;margin-bottom:8px;border:1px solid rgba(192,80,80,0.2);background:rgba(192,80,80,0.04)">'
+      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
+      +'<span class="alert-type-risk">⚠️ Address not found</span>'
+      +badge('b-t'+(c.tier||3),'T'+(c.tier||3))
+      +'<span style="flex:1"></span>'
+      +'<span style="font-size:10px;color:var(--dim)">'+timeStr+'</span>'
+      +'</div>'
+      +'<div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:3px">'+esc(name)+'</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-bottom:4px">'+esc(c.firmName||'Unknown firm')+' &middot; <span style="color:var(--red)">'+esc(c.workEmail||'')+'</span></div>'
+      +(c.subjectLine?'<div style="font-size:11px;color:var(--dim);margin-bottom:3px">Subject: '+esc(c.subjectLine)+'</div>':'')
+      +(c.bounceReason?'<div style="font-size:11px;color:var(--dim);line-height:1.5">'+esc(c.bounceReason)+'</div>':'')
+      +'</div>';
+  }).join('');
 }
 
 function startAlertPolling(){
