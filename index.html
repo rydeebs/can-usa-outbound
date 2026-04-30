@@ -1920,16 +1920,26 @@ function renderQueueGroups(){
     el.innerHTML='<div style="padding:40px;text-align:center;color:var(--dim);font-size:13px">No contacts pending. Import your CSV to get started.</div>';
     return;
   }
-  // Group by tier+template
+  const sorted=getQueueBulkGroups(pending);
+  el.innerHTML=sorted.map(g=>buildGroupCard(g)).join('');
+}
+
+function getQueueBulkGroups(sourceList){
+  const list=sourceList||getQueueBulkFiltered();
   const groups={};
-  pending.forEach(c=>{
-    const key='T'+c.tier+'-'+(c.templateUsed||'B');
-    if(!groups[key])groups[key]={tier:c.tier,tpl:c.templateUsed||'B',contacts:[],key};
+  list.forEach(c=>{
+    const tier=c.tier;
+    const tpl=(c.templateUsed||'B');
+    const writeTpl=(c.writeTemplateName||'').trim();
+    const key='T'+tier+'-'+tpl+'::'+writeTpl;
+    if(!groups[key])groups[key]={tier,tpl,writeTemplateName:writeTpl,contacts:[],key};
     groups[key].contacts.push(c);
   });
-  // Sort groups: T1-B first, then T1-A, T1-C, T2-B...
-  const sorted=Object.values(groups).sort((a,b)=>a.tier-b.tier||a.tpl.localeCompare(b.tpl));
-  el.innerHTML=sorted.map(g=>buildGroupCard(g)).join('');
+  return Object.values(groups).sort((a,b)=>{
+    if(a.tier!==b.tier)return a.tier-b.tier;
+    if(a.tpl!==b.tpl)return a.tpl.localeCompare(b.tpl);
+    return (a.writeTemplateName||'').localeCompare(b.writeTemplateName||'');
+  });
 }
 
 function buildGroupCard(g){
@@ -1962,6 +1972,7 @@ function buildGroupCard(g){
     +'<div style="padding:12px 16px;background:rgba(255,255,255,0.02);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
     +badge('b-t'+g.tier,'Tier '+g.tier)
     +badge(tplInfo.cls,tplInfo.label)
+    +(g.writeTemplateName?badge('b-tpla',esc(g.writeTemplateName)):'')
     +'<span style="font-size:13px;font-weight:500;color:var(--text)">'+g.contacts.length+' contacts</span>'
     +approvedNote
     +'<div style="flex:1"></div>'
@@ -1998,14 +2009,17 @@ function buildGroupCard(g){
 }
 
 function approveGroup(groupKey){
-  const match=groupKey.match(/T(\d+)-([ABC])/);
-  if(!match)return;
-  const tier=parseInt(match[1]),tpl=match[2];
-  const pending=contacts.filter(c=>!c.emailSent&&!c.approved&&c.tier===tier&&(c.templateUsed||'B')===tpl);
+  const groups=getQueueBulkGroups(getQueueBulkFiltered());
+  const group=groups.find(g=>g.key===groupKey);
+  if(!group){toast('Group not found in current filter','amber');return;}
+  const pending=group.contacts.filter(c=>!c.emailSent&&!c.approved);
   const count=pending.length;
   if(!count){toast('All contacts in this group are already approved','amber');return;}
-  if(!confirm('Approve all '+count+' contacts in Tier '+tier+' / '+(TPL[tpl]?.label||'Template '+tpl)+'?\n\nMarks them ready to send. You can still review individually first.'))return;
-  contacts=contacts.map(c=>(!c.emailSent&&!c.approved&&c.tier===tier&&(c.templateUsed||'B')===tpl)?{...c,approved:true}:c);
+  const label='Tier '+group.tier+' / '+(TPL[group.tpl]?.label||('Template '+group.tpl))
+    +(group.writeTemplateName?(' / '+group.writeTemplateName):'');
+  if(!confirm('Approve all '+count+' contacts in '+label+'?\n\nMarks them ready to send. You can still review individually first.'))return;
+  const emailSet=new Set(pending.map(c=>(c.workEmail||'').toLowerCase()));
+  contacts=contacts.map(c=>(!c.emailSent&&!c.approved&&emailSet.has((c.workEmail||'').toLowerCase()))?{...c,approved:true}:c);
   save();updateGlobals();renderQueueGroups();
   toast(count+' contacts approved','green');
 }
