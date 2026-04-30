@@ -413,7 +413,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
 </div>
 
   <!-- BULK CREATE VIEW -->
-  <div id="queue-bulkcreate-view" class="scroll" style="display:none;padding:16px">
+  <div id="queue-bulkcreate-view" style="display:none;flex:1;overflow-y:auto;min-height:0;padding:16px;flex-direction:column">
 
     <div style="background:rgba(123,104,200,0.07);border:1px solid rgba(123,104,200,0.2);border-radius:8px;padding:14px 16px;margin-bottom:16px">
       <div style="font-size:13px;font-weight:600;color:var(--violet);margin-bottom:4px">✦ Bulk create emails with Claude</div>
@@ -1857,7 +1857,7 @@ function setQueueTab(tab){
     if(ind)ind.style.display='flex';
     renderQueueIndividual();
   }else if(tab==='bulkcreate'){
-    if(bc)bc.style.display='block';
+    if(bc)bc.style.display='flex';
     // Hide the individual-review empty-state message
     const re=document.getElementById('review-empty');
     if(re)re.style.display='none';
