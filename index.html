@@ -349,6 +349,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
   <!-- Sub-tabs -->
   <div style="display:flex;border-bottom:1px solid var(--border);background:var(--sidebar);flex-shrink:0;align-items:center">
     <button id="qtab-bulk" onclick="setQueueTab('bulk')" style="padding:10px 18px;font-size:13px;font-weight:500;background:transparent;border:none;border-bottom:2px solid var(--amber);color:var(--amber);cursor:pointer;font-family:inherit">Bulk approve</button>
+    <button id="qtab-bulksend" onclick="setQueueTab('bulksend')" style="padding:10px 18px;font-size:13px;font-weight:500;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-family:inherit">Bulk send</button>
     <button id="qtab-individual" onclick="setQueueTab('individual')" style="padding:10px 18px;font-size:13px;font-weight:500;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-family:inherit">Individual review</button>
     <button id="qtab-bulkcreate" onclick="setQueueTab('bulkcreate')" style="padding:10px 18px;font-size:13px;font-weight:500;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-family:inherit">✦ Bulk create</button>
     <div style="flex:1;display:flex;align-items:center;justify-content:flex-end;padding-right:16px;gap:10px">
@@ -384,6 +385,26 @@ tr:hover td{background:rgba(255,255,255,0.02)}
       Grouped by Tier + Template. Review one sample per group, approve the entire group in one click.
     </div>
     <div id="queue-groups"></div>
+  </div>
+  <!-- BULK SEND VIEW -->
+  <div id="queue-bulksend-view" class="scroll" style="display:none;padding:16px">
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <input class="inp" id="q-send-search" placeholder="Search name, firm, or email..." oninput="renderBulkSend()" style="width:190px;font-size:12px"/>
+      <select class="inp" id="q-send-tier" onchange="renderBulkSend()" style="width:100px;font-size:12px">
+        <option value="all">All tiers</option>
+        <option value="1">Tier 1</option>
+        <option value="2">Tier 2</option>
+        <option value="3">Tier 3</option>
+      </select>
+      <select class="inp" id="q-send-template" onchange="renderBulkSend()" style="width:210px;font-size:12px">
+        <option value="all">All templates</option>
+      </select>
+      <span style="font-size:12px;color:var(--dim)">Ready to send: <span id="q-send-count" style="color:var(--green);font-weight:600">0</span></span>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6;max-width:760px">
+      Groups approved in Bulk approve appear here. Sending from this tab dispatches real emails to all contacts in that approved group.
+    </div>
+    <div id="queue-send-groups"></div>
   </div>
   <!-- INDIVIDUAL VIEW -->
   <div id="queue-individual-view" style="display:none;flex:1;overflow:hidden;flex-direction:column" class="queue-wrap">
@@ -1882,11 +1903,13 @@ function refreshBulkTemplateFilter(){
 function setQueueTab(tab){
   queueTab=tab;
   const bulk=document.getElementById('queue-bulk-view');
+  const bsend=document.getElementById('queue-bulksend-view');
   const ind=document.getElementById('queue-individual-view');
   const bc=document.getElementById('queue-bulkcreate-view');
-  const tabs={bulk:'qtab-bulk',individual:'qtab-individual',bulkcreate:'qtab-bulkcreate'};
+  const tabs={bulk:'qtab-bulk',bulksend:'qtab-bulksend',individual:'qtab-individual',bulkcreate:'qtab-bulkcreate'};
   // Hide all views
   if(bulk)bulk.style.display='none';
+  if(bsend)bsend.style.display='none';
   if(ind)ind.style.display='none';
   if(bc)bc.style.display='none';
   // Reset all tab styles
@@ -1901,6 +1924,10 @@ function setQueueTab(tab){
     if(bulk)bulk.style.display='';
     refreshBulkTemplateFilter();
     renderQueueGroups();
+  }else if(tab==='bulksend'){
+    if(bsend)bsend.style.display='';
+    refreshBulkSendTemplateFilter();
+    renderBulkSend();
   }else if(tab==='individual'){
     if(ind)ind.style.display='flex';
     refreshGeneratedTemplateFilters();
@@ -1941,6 +1968,90 @@ function getQueueBulkGroups(sourceList){
     if(a.tpl!==b.tpl)return a.tpl.localeCompare(b.tpl);
     return (a.writeTemplateName||'').localeCompare(b.writeTemplateName||'');
   });
+}
+
+function getBulkSendFiltered(){
+  const s=(document.getElementById('q-send-search')?.value||'').toLowerCase();
+  const ft=document.getElementById('q-send-tier')?.value||'all';
+  const fp=document.getElementById('q-send-template')?.value||'all';
+  return contacts
+    .filter(c=>c.approved&&!c.emailSent)
+    .filter(c=>ft==='all'||String(c.tier)===ft)
+    .filter(c=>{
+      if(fp==='all')return true;
+      if(fp.startsWith('base:'))return (c.templateUsed||'B')===fp.slice(5);
+      if(fp.startsWith('gen:'))return (c.writeTemplateName||'')===decodeURIComponent(fp.slice(4));
+      return true;
+    })
+    .filter(c=>!s||`${c.fullName||''} ${c.firstName||''} ${c.lastName||''} ${c.firmName||''} ${c.workEmail||''}`.toLowerCase().includes(s));
+}
+
+function getBulkSendGroups(sourceList){
+  return getQueueBulkGroups(sourceList||getBulkSendFiltered());
+}
+
+function refreshBulkSendTemplateFilter(){
+  const el=document.getElementById('q-send-template');
+  if(!el)return;
+  const current=el.value||'all';
+  const pending=contacts.filter(c=>c.approved&&!c.emailSent);
+  const baseTpls=[...new Set(pending.map(c=>c.templateUsed||'B'))].sort();
+  const generated=[...new Set(pending.map(c=>c.writeTemplateName||'').filter(Boolean))].sort();
+  let html='<option value="all">All templates</option>';
+  html+=baseTpls.map(t=>'<option value="base:'+t+'">Template '+t+'</option>').join('');
+  html+=generated.map(name=>'<option value="gen:'+encodeURIComponent(name)+'">Generated: '+esc(name)+'</option>').join('');
+  el.innerHTML=html;
+  const valid=[...el.options].some(o=>o.value===current);
+  el.value=valid?current:'all';
+}
+
+function renderBulkSend(){
+  const filtered=getBulkSendFiltered();
+  const groups=getBulkSendGroups(filtered);
+  const countEl=document.getElementById('q-send-count');
+  if(countEl)countEl.textContent=filtered.length;
+  const el=document.getElementById('queue-send-groups');
+  if(!el)return;
+  if(!groups.length){
+    el.innerHTML='<div style="padding:40px;text-align:center;color:var(--dim);font-size:13px">No approved groups ready to send.</div>';
+    return;
+  }
+  el.innerHTML=groups.map(g=>{
+    const tplInfo=TPL[g.tpl]||{label:'Template '+g.tpl,cls:'b-tplb'};
+    const label='Tier '+g.tier+' / '+(tplInfo.label||('Template '+g.tpl))+(g.writeTemplateName?(' / '+g.writeTemplateName):'');
+    return '<div class="card" style="margin-bottom:12px;padding:12px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+      +badge('b-t'+g.tier,'Tier '+g.tier)
+      +badge(tplInfo.cls,tplInfo.label)
+      +(g.writeTemplateName?badge('b-tpla',esc(g.writeTemplateName)):'')
+      +'<span style="font-size:12px;color:var(--text)">'+g.contacts.length+' contacts</span>'
+      +'<span style="font-size:11px;color:var(--dim)">'+esc(label)+'</span>'
+      +'<div style="flex:1"></div>'
+      +'<button class="btn btn-solid" style="font-size:11px;padding:4px 10px" onclick="sendApprovedGroup(this.dataset.key)" data-key="'+esc(g.key)+'">Send all '+g.contacts.length+'</button>'
+      +'</div>';
+  }).join('');
+}
+
+async function sendApprovedGroup(groupKey){
+  const groups=getBulkSendGroups(getBulkSendFiltered());
+  const group=groups.find(g=>g.key===groupKey);
+  if(!group){toast('Group not found in current filter','amber');return;}
+  const sendable=group.contacts
+    .filter(c=>c.approved&&!c.emailSent)
+    .filter(c=>(c.subjectLine||'').trim()&&(c.refinedEmailBody||c.emailBody||'').trim());
+  if(!sendable.length){toast('No sendable contacts in this group','amber');return;}
+  const tplInfo=TPL[group.tpl]||{label:'Template '+group.tpl};
+  const label='Tier '+group.tier+' / '+tplInfo.label+(group.writeTemplateName?(' / '+group.writeTemplateName):'');
+  if(!confirm('Send '+sendable.length+' approved emails for '+label+'?'))return;
+  let done=0,failed=0;
+  for(let i=0;i<sendable.length;i++){
+    try{await sendContactNow(sendable[i]);done++;}catch(_e){failed++;}
+    if(i<sendable.length-1)await new Promise(r=>setTimeout(r,500));
+  }
+  save();
+  renderBulkSend();
+  renderQueueGroups();
+  updateGlobals();
+  toast('Sent '+done+' from group'+(failed?' ('+failed+' failed)':''),failed?'amber':'green');
 }
 
 function buildGroupCard(g){
