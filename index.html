@@ -2694,10 +2694,12 @@ function toggleTierExpand(t){
 
 function renderDashboard(){
   const sent=contacts.filter(c=>c.emailSent);
-  const op=sent.filter(c=>c.opened).length,rp=sent.filter(c=>c.replied).length,bo=sent.filter(c=>c.bounced).length;
+  const delivered=sent.filter(c=>!c.bounced);
+  const op=delivered.filter(c=>c.opened).length,rp=delivered.filter(c=>c.replied).length,bo=sent.filter(c=>c.bounced).length;
+  const deliveredCount=delivered.length;
   document.getElementById('dash-top').innerHTML=[
-    {l:'Emails sent',v:sent.length,c:'var(--text)'},{l:'Open rate',v:(sent.length?Math.round(op/sent.length*100):0)+'%',c:'var(--blue)',s:'vs 6% avg'},
-    {l:'Reply rate',v:(sent.length?Math.round(rp/sent.length*100):0)+'%',c:'var(--teal)',s:'vs 0.9% avg'},{l:'Bounces',v:bo,c:bo>0?'var(--red)':'var(--dim)'},
+    {l:'Emails sent',v:sent.length,c:'var(--text)'},{l:'Open rate',v:(deliveredCount?Math.round(op/deliveredCount*100):0)+'%',c:'var(--blue)',s:'vs 6% avg'},
+    {l:'Reply rate',v:(deliveredCount?Math.round(rp/deliveredCount*100):0)+'%',c:'var(--teal)',s:'vs 0.9% avg'},{l:'Bounces',v:bo,c:bo>0?'var(--red)':'var(--dim)'},
     {l:'LinkedIn pending',v:getLinkedInPending(),c:getLinkedInPending()>0?'var(--amber)':'var(--dim)',s:'connections to send'},
   ].map(s=>`<div class="stat-card"><div style="font-size:10px;color:var(--dim);margin-bottom:5px">${s.l}</div><div style="font-size:24px;font-weight:600;color:${s.c}">${s.v}</div>${s.s?`<div style="font-size:10px;color:var(--dim);margin-top:2px">${s.s}</div>`:''}</div>`).join('');
   // Build tier breakdown with expandable template sub-rows
@@ -2705,9 +2707,10 @@ function renderDashboard(){
   [1,2,3].forEach(t=>{
     const tc=contacts.filter(c=>c.tier===t);
     const ts=tc.filter(c=>c.emailSent);
-    const tt=ts.length||1;
-    const o=ts.filter(c=>c.opened).length;
-    const r=ts.filter(c=>c.replied).length;
+    const td=ts.filter(c=>!c.bounced);
+    const tt=td.length||1;
+    const o=td.filter(c=>c.opened).length;
+    const r=td.filter(c=>c.replied).length;
     const expandBtn=`<button class="tier-expand-btn" id="tier-btn-${t}" onclick="toggleTierExpand(${t})">
       <span class="arrow">&#9654;</span> Templates
     </button>`;
@@ -2725,9 +2728,10 @@ function renderDashboard(){
       const tplInfo=TPL[tpl]||{label:'Template '+tpl,cls:'b-tpl'+tpl.toLowerCase()};
       const tpc=tc.filter(c=>(c.templateUsed||'B')===tpl);
       const tps=tpc.filter(c=>c.emailSent);
-      const tpt=tps.length||1;
-      const tpo=tps.filter(c=>c.opened).length;
-      const tpr=tps.filter(c=>c.replied).length;
+      const tpd=tps.filter(c=>!c.bounced);
+      const tpt=tpd.length||1;
+      const tpo=tpd.filter(c=>c.opened).length;
+      const tpr=tpd.filter(c=>c.replied).length;
       tierHtml += `<tr class="tpl-sub-row" id="tpl-row-${t}-${tpl}">
         <td style="padding-left:28px">${badge(tplInfo.cls,tpl)}<span style="font-size:11px;color:var(--dim);margin-left:5px">${tplInfo.desc||tplInfo.label}</span></td>
         <td style="color:var(--muted);font-size:12px">${tpc.length}</td>
