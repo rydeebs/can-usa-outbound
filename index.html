@@ -249,8 +249,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
 
 <!-- OVERLAYS -->
 <div id="toast" class="toast"></div>
-<div class="panel-overlay" id="seq-editor-overlay" onclick="closeSeqEditor()"></div>
-<div class="tpl-overlay" id="tpl-overlay" onclick="closeTemplates()"></div>
+<div class="panel-overlay" id="seq-editor-overlay" onclick="closeSeqEditor()"></div><div class="tpl-overlay" id="tpl-overlay" onclick="closeTemplates()"></div>
 
 <!-- SEQ EDITOR SIDE PANEL -->
 <div class="side-panel" id="seq-editor-panel">
@@ -351,6 +350,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
   <div style="display:flex;border-bottom:1px solid var(--border);background:var(--sidebar);flex-shrink:0;align-items:center">
     <button id="qtab-bulk" onclick="setQueueTab('bulk')" style="padding:10px 18px;font-size:13px;font-weight:500;background:transparent;border:none;border-bottom:2px solid var(--amber);color:var(--amber);cursor:pointer;font-family:inherit">Bulk approve</button>
     <button id="qtab-individual" onclick="setQueueTab('individual')" style="padding:10px 18px;font-size:13px;font-weight:500;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-family:inherit">Individual review</button>
+    <button id="qtab-bulkcreate" onclick="setQueueTab('bulkcreate')" style="padding:10px 18px;font-size:13px;font-weight:500;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-family:inherit">✦ Bulk create</button>
     <div style="flex:1;display:flex;align-items:center;justify-content:flex-end;padding-right:16px;gap:10px">
       <span style="font-size:12px;color:var(--dim)">Pending: <span id="q-pending-count" style="color:var(--amber);font-weight:600">0</span></span>
     </div>
@@ -409,6 +409,89 @@ tr:hover td{background:rgba(255,255,255,0.02)}
       </div>
       <div id="queue-list-items" style="overflow-y:auto;flex:1"></div>
     </div>
+
+  <!-- BULK CREATE VIEW -->
+  <div id="queue-bulkcreate-view" class="scroll" style="display:none;padding:16px">
+
+    <div style="background:rgba(123,104,200,0.07);border:1px solid rgba(123,104,200,0.2);border-radius:8px;padding:14px 16px;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:600;color:var(--violet);margin-bottom:4px">✦ Bulk create emails with Claude</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.6">Filter contacts with empty or broken emails, set style options, then generate all at once. Claude writes a unique email for each contact using their FISP data. Review individually before sending.</div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:16px">
+      <div style="font-size:11px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px">Filter contacts</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input class="inp" id="bc-search" placeholder="Search name or firm..." oninput="renderBulkCreate()" style="width:160px;font-size:12px"/>
+        <select class="inp" id="bc-tier" onchange="renderBulkCreate()" style="width:100px;font-size:12px">
+          <option value="all">All tiers</option>
+          <option value="1">Tier 1</option>
+          <option value="2">Tier 2</option>
+          <option value="3">Tier 3</option>
+        </select>
+        <select class="inp" id="bc-content" onchange="renderBulkCreate()" style="width:165px;font-size:12px">
+          <option value="empty">Empty subject or body</option>
+          <option value="unknown">Has &lt;unknown&gt;</option>
+          <option value="both">Empty + &lt;unknown&gt;</option>
+          <option value="all-unsent">All unsent contacts</option>
+        </select>
+        <select class="inp" id="bc-tpl" onchange="renderBulkCreate()" style="width:120px;font-size:12px">
+          <option value="all">All templates</option>
+          <option value="A">Template A</option>
+          <option value="B">Template B</option>
+          <option value="C">Template C</option>
+        </select>
+        <select class="inp" id="bc-firm" onchange="renderBulkCreate()" style="width:150px;font-size:12px">
+          <option value="all">All firms</option>
+        </select>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:var(--dim)">Matching: <span id="bc-count" style="color:var(--amber);font-weight:600">0</span> contacts</div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:16px">
+      <div style="font-size:11px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px">Style options <span style="font-size:10px;font-weight:400;color:var(--dim);text-transform:none">(applies to all)</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:12px">
+        <div>
+          <div class="style-group-label">Length</div>
+          <div class="style-chips">
+            <div class="style-chip selected" data-group="bc-length" data-val="short" onclick="selectChip(this)">Short</div>
+            <div class="style-chip" data-group="bc-length" data-val="medium" onclick="selectChip(this)">Medium</div>
+            <div class="style-chip" data-group="bc-length" data-val="long" onclick="selectChip(this)">Long</div>
+          </div>
+        </div>
+        <div>
+          <div class="style-group-label">Tone</div>
+          <div class="style-chips">
+            <div class="style-chip selected" data-group="bc-tone" data-val="direct" onclick="selectChip(this)">Direct</div>
+            <div class="style-chip" data-group="bc-tone" data-val="informational" onclick="selectChip(this)">Informational</div>
+            <div class="style-chip" data-group="bc-tone" data-val="witty" onclick="selectChip(this)">Witty</div>
+            <div class="style-chip" data-group="bc-tone" data-val="consultative" onclick="selectChip(this)">Consultative</div>
+          </div>
+        </div>
+        <div>
+          <div class="style-group-label">Opening angle</div>
+          <div class="style-chips">
+            <div class="style-chip selected" data-group="bc-angle" data-val="fisp-data" onclick="selectChip(this)">FISP data</div>
+            <div class="style-chip" data-group="bc-angle" data-val="swarmp" onclick="selectChip(this)">SWARMP risk</div>
+            <div class="style-chip" data-group="bc-angle" data-val="deadline" onclick="selectChip(this)">Deadline urgency</div>
+            <div class="style-chip" data-group="bc-angle" data-val="credibility" onclick="selectChip(this)">Credibility</div>
+            <div class="style-chip" data-group="bc-angle" data-val="linkedin" onclick="selectChip(this)">LinkedIn hook</div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-bottom:12px">
+        <div class="style-group-label" style="margin-bottom:4px">Custom instruction (optional)</div>
+        <input class="inp" id="bc-custom-inst" placeholder="e.g. mention the 2/21/2027 deadline, keep it punchy..." style="width:100%;font-size:12px"/>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-violet" id="bc-btn-generate" onclick="doBulkCreate()" style="font-size:13px;padding:9px 20px">✦ Generate with Claude</button>
+        <button class="btn" id="bc-btn-stop" style="display:none;color:var(--red);border-color:rgba(192,80,80,0.3)" onclick="bcStop=true">Stop</button>
+        <span id="bc-status" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+    </div>
+
+    <div id="bc-results-area"></div>
+
+  </div>
     <div class="review-panel">
       <div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:13px" id="review-empty">Select a contact to review</div>
       <div id="review-content" style="display:none;flex:1;overflow:hidden;flex-direction:row" class="review-panel">
@@ -1607,16 +1690,29 @@ async function doWriteEmail(){
     'fisp-data':    'Open with their specific FISP backlog numbers (totalUnfiled, sub10A). Lead with data.',
     'swarmp':       'Open with the SWARMP risk angle — prior SWARMP buildings auto-classify as Unsafe at sub-cycle close.',
     'deadline':     'Open with the 2/21/2027 sub-cycle 10A deadline and the math of why scaffold alone cannot meet it.',
-    'credibility':  'Open with CAN USA credibility — NYPL, US Capitol Dome, NASA, Yale Kline Tower. Then pivot to their backlog.',
+    'credibility':  'Open with CAN USA credibility and 40+ year heritage. CAN USA talking points to draw from when tone or angle calls for it:\n- Version 1 (Direct+Credibility): "For 40+ years we have done rope access work at heights most crews won\'t touch, and we deliver that same expertise at a fraction of the cost of scaffolding. We are so deep in the discipline that we train architects to certify in rope access themselves. That is the foundation we are now bringing to FISP."\n- Version 2 (Informational+Credibility): "Rope access has been our craft for over four decades, long enough that architects come to us to get certified in it. We bring that same depth to FISP inspections, without the cost, delay, or disruption of scaffolding."\n- Version 3 (Witty+Credibility): "40+ years on the ropes. A fraction of the cost of scaffolding. And the only firm credentialed to train architects in rope access themselves, now putting all of it to work in FISP."\nUse whichever version best matches the selected tone. Adapt freely, do not quote verbatim. Then pivot to their specific backlog.',
     'linkedin':     'Open with a specific reference to something on their LinkedIn profile or firm website before pivoting to the FISP angle.',
   };
 
-  const sysPrompt = `You write cold outbound emails for Pawel Chrzanowski (Special Rigger, CAN USA) to NYC architect firms with FISP inspection backlogs.
+  const sysPrompt = `You write cold outbound emails for Pawel Chrzanowski (Vice President, CAN USA) to NYC architect firms with FISP inspection backlogs.
 
-CAN USA provides SPRAT-certified rope access for FISP: 30–50% lower cost than scaffolding, 2–3 days per building, no street closures.
+CAN USA provides SPRAT-certified rope access for FISP: 30-50% lower cost than scaffolding, 2-3 days per building, no street closures.
+
+CAN USA positioning language (use the version that fits the selected tone/angle — weave naturally, never copy verbatim):
+
+Version 1 — Owner/cost-focused (best for: direct tone, FISP data angle, deadline angle):
+"For 40+ years we've done rope access work at heights most crews won't touch — and we deliver that same expertise at a fraction of the cost of scaffolding. We're so deep in the discipline that we train architects to certify in rope access themselves. That's the foundation we're now bringing to FISP."
+
+Version 2 — Authority-focused (best for: consultative tone, credibility angle, informational tone):
+"Rope access has been our craft for over four decades — long enough that architects come to us to get certified in it. We bring that same depth to FISP inspections, without the cost, delay, or disruption of scaffolding."
+
+Version 3 — Punchy/elevator-pitch (best for: witty tone, any angle):
+"40+ years on the ropes. A fraction of the cost of scaffolding. And the only firm credentialed to train architects in rope access themselves — now putting all of it to work in FISP."
+
+Draw on the relevant version for language cues — do not copy it verbatim. Adapt it to the contact's specific backlog data and the email's opening angle.
 
 Rules:
-- No em dashes (—) as connectors — use commas or periods instead
+- No em dashes as connectors — use commas or periods instead
 - No banned phrases: "I wanted to reach out", "I hope this finds you well", "it's worth noting", "touch base", "circle back", "leverage", "synergy"
 - No bullet points in the email
 - No sign-off — signature is added separately
@@ -1731,20 +1827,30 @@ function setQueueTab(tab){
   queueTab=tab;
   const bulk=document.getElementById('queue-bulk-view');
   const ind=document.getElementById('queue-individual-view');
-  const tb=document.getElementById('qtab-bulk');
-  const ti=document.getElementById('qtab-individual');
+  const bc=document.getElementById('queue-bulkcreate-view');
+  const tabs={bulk:'qtab-bulk',individual:'qtab-individual',bulkcreate:'qtab-bulkcreate'};
+  // Hide all views
+  if(bulk)bulk.style.display='none';
+  if(ind)ind.style.display='none';
+  if(bc)bc.style.display='none';
+  // Reset all tab styles
+  Object.values(tabs).forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){el.style.borderBottomColor='transparent';el.style.color='var(--muted)';}
+  });
+  // Show active tab
+  const activeEl=document.getElementById(tabs[tab]);
+  if(activeEl){activeEl.style.borderBottomColor='var(--amber)';activeEl.style.color='var(--amber)';}
   if(tab==='bulk'){
     if(bulk)bulk.style.display='';
-    if(ind)ind.style.display='none';
-    if(tb){tb.style.borderBottomColor='var(--amber)';tb.style.color='var(--amber)';}
-    if(ti){ti.style.borderBottomColor='transparent';ti.style.color='var(--muted)';}
     renderQueueGroups();
-  }else{
-    if(bulk)bulk.style.display='none';
-    if(ind){ind.style.display='flex';}
-    if(tb){tb.style.borderBottomColor='transparent';tb.style.color='var(--muted)';}
-    if(ti){ti.style.borderBottomColor='var(--amber)';ti.style.color='var(--amber)';}
+  }else if(tab==='individual'){
+    if(ind)ind.style.display='flex';
     renderQueueIndividual();
+  }else if(tab==='bulkcreate'){
+    if(bc)bc.style.display='block';
+    _populateBcFirmDropdown();
+    renderBulkCreate();
   }
 }
 
@@ -3405,6 +3511,188 @@ function forceWipeContact(email){
   });
   if(found){save();updateGlobals();toast('Wiped content for '+email,'green');}
   else toast('Contact not found: '+email,'amber');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// BULK CREATE
+// ══════════════════════════════════════════════════════════════════
+
+let bcStop = false;
+
+function _populateBcFirmDropdown(){
+  const firms=[...new Set(contacts.filter(c=>!c.emailSent&&c.firmName).map(c=>c.firmName))].sort();
+  const el=document.getElementById('bc-firm');
+  if(!el)return;
+  el.innerHTML='<option value="all">All firms</option>'+firms.map(f=>'<option value="'+esc(f)+'">'+esc(f)+'</option>').join('');
+}
+
+function getBcFiltered(){
+  const s=(document.getElementById('bc-search')?.value||'').toLowerCase();
+  const ft=document.getElementById('bc-tier')?.value||'all';
+  const fc=document.getElementById('bc-content')?.value||'empty';
+  const fp=document.getElementById('bc-tpl')?.value||'all';
+  const ff=document.getElementById('bc-firm')?.value||'all';
+  return contacts
+    .filter(c=>!c.emailSent)
+    .filter(c=>ft==='all'||String(c.tier)===ft)
+    .filter(c=>fp==='all'||(c.templateUsed||'B')===fp)
+    .filter(c=>ff==='all'||(c.firmName||'')===ff)
+    .filter(c=>{
+      const emptySubj=!c.subjectLine||!c.subjectLine.trim();
+      const emptyBody=!c.emailBody||!c.emailBody.trim();
+      const hasUnk=hasUnknown(c.subjectLine)||hasUnknown(c.emailBody)||hasUnknown(c.refinedEmailBody);
+      if(fc==='empty')return emptySubj||emptyBody;
+      if(fc==='unknown')return hasUnk;
+      if(fc==='both')return emptySubj||emptyBody||hasUnk;
+      if(fc==='all-unsent')return true;
+      return emptySubj||emptyBody;
+    })
+    .filter(c=>!s||((c.fullName||c.firstName+' '+c.lastName)+' '+(c.firmName||'')).toLowerCase().includes(s))
+    .sort((a,b)=>a.tier-b.tier||b.totalUnfiled-a.totalUnfiled);
+}
+
+function renderBulkCreate(){
+  const contacts_list=getBcFiltered();
+  const countEl=document.getElementById('bc-count');
+  if(countEl)countEl.textContent=contacts_list.length;
+  const el=document.getElementById('bc-results-area');
+  if(!el)return;
+  if(!contacts_list.length){
+    el.innerHTML='<div style="text-align:center;padding:40px;color:var(--dim);font-size:13px">No contacts match the selected filters.</div>';
+    return;
+  }
+  el.innerHTML='<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden">'
+    +'<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:11px;color:var(--dim);">'
+    +contacts_list.length+' contacts will be updated &mdash; existing emails will be overwritten. Results appear here as each email generates.</div>'
+    +'<table style="width:100%"><thead><tr>'
+    +'<th style="text-align:left;padding:8px 12px;font-size:10px;color:var(--dim);font-weight:500;text-transform:uppercase">Contact</th>'
+    +'<th style="text-align:left;padding:8px 12px;font-size:10px;color:var(--dim);font-weight:500;text-transform:uppercase">Firm</th>'
+    +'<th style="text-align:left;padding:8px 12px;font-size:10px;color:var(--dim);font-weight:500;text-transform:uppercase">Tier/Tpl</th>'
+    +'<th style="text-align:left;padding:8px 12px;font-size:10px;color:var(--dim);font-weight:500;text-transform:uppercase">Status</th>'
+    +'</tr></thead><tbody id="bc-tbody">'
+    +contacts_list.map(c=>{
+      const name=esc((c.fullName||(c.firstName+' '+c.lastName)).trim());
+      return '<tr id="bc-row-'+esc(c.workEmail||'')+'">'
+        +'<td style="padding:8px 12px;font-size:12px;color:var(--text)">'+name+'</td>'
+        +'<td style="padding:8px 12px;font-size:11px;color:var(--muted)">'+esc(c.firmName||'')+'</td>'
+        +'<td style="padding:8px 12px">'+badge('b-t'+c.tier,'T'+c.tier)+' '+badge(TPL[c.templateUsed||'B']?.cls||'b-tplb',c.templateUsed||'B')+'</td>'
+        +'<td style="padding:8px 12px;font-size:11px;color:var(--dim)" id="bc-status-'+esc(c.workEmail||'')+'">Queued</td>'
+        +'</tr>';
+    }).join('')
+    +'</tbody></table></div>';
+}
+
+async function doBulkCreate(){
+  const list=getBcFiltered();
+  if(!list.length){toast('No contacts match the filter','amber');return;}
+  if(!confirm('Generate emails for '+list.length+' contacts? Existing emails will be overwritten.'))return;
+
+  const length = getSelectedChip('bc-length')||'short';
+  const tone   = getSelectedChip('bc-tone')||'direct';
+  const angle  = getSelectedChip('bc-angle')||'fisp-data';
+  const custom = (document.getElementById('bc-custom-inst')?.value||'').trim();
+
+  // Build template name for this batch
+  const toneLabels={direct:'Direct',informational:'Info',witty:'Witty',consultative:'Consultative'};
+  const angleLabels={'fisp-data':'FISP','swarmp':'SWARMP','deadline':'Urgent','credibility':'Credibility','linkedin':'LinkedIn'};
+  const tplName='Tpl '+(toneLabels[tone]||tone)+' + '+(angleLabels[angle]||angle);
+
+  const lengthMap={short:'under 120 words',medium:'120-200 words',long:'200-280 words'};
+  const toneMap={direct:'direct and confident',informational:'educational and informational',witty:'witty and engaging',consultative:'consultative and empathetic'};
+  const angleMap={
+    'fisp-data':'Open with their specific FISP backlog numbers. Lead with data.',
+    'swarmp':'Open with the SWARMP risk angle — prior SWARMP buildings auto-classify as Unsafe.',
+    'deadline':'Open with the 2/21/2027 sub-cycle 10A deadline and the math of why scaffold alone cannot meet it.',
+    'credibility':'Open with CAN USA credibility and 40+ year heritage. Talking points: Direct+Credibility: For 40+ years we have done rope access at heights most crews won\'t touch, at a fraction of scaffolding cost. We train architects to certify in rope access themselves. Informational+Credibility: Rope access has been our craft for over four decades, long enough that architects come to us to get certified in it. Witty+Credibility: 40+ years on the ropes. A fraction of scaffolding cost. The only firm credentialed to train architects in rope access, now in FISP. Adapt to match the selected tone. Then pivot to their specific backlog.',
+    'linkedin':'Open with a specific reference to their LinkedIn profile or firm work before pivoting to FISP.',
+  };
+
+  const sysPrompt=`You write cold outbound emails for Pawel Chrzanowski (Vice President, CAN USA) to NYC architect firms with FISP inspection backlogs.
+
+CAN USA provides SPRAT-certified rope access for FISP: 30-50% lower cost than scaffolding, 2-3 days per building, no street closures.
+
+CAN USA positioning language (use the version that fits the selected tone/angle — weave naturally, never copy verbatim):
+
+Version 1 — Owner/cost-focused (best for: direct tone, FISP data angle, deadline angle):
+"For 40+ years we've done rope access work at heights most crews won't touch — and we deliver that same expertise at a fraction of the cost of scaffolding. We're so deep in the discipline that we train architects to certify in rope access themselves. That's the foundation we're now bringing to FISP."
+
+Version 2 — Authority-focused (best for: consultative tone, credibility angle, informational tone):
+"Rope access has been our craft for over four decades — long enough that architects come to us to get certified in it. We bring that same depth to FISP inspections, without the cost, delay, or disruption of scaffolding."
+
+Version 3 — Punchy/elevator-pitch (best for: witty tone, any angle):
+"40+ years on the ropes. A fraction of the cost of scaffolding. And the only firm credentialed to train architects in rope access themselves — now putting all of it to work in FISP."
+
+Draw on the relevant version for language cues — do not copy it verbatim. Adapt it to the contact's specific backlog data and the email's opening angle.
+
+Rules:
+- No em dashes as connectors
+- No banned phrases: "I wanted to reach out", "I hope this finds you well", "touch base", "circle back", "leverage"
+- No bullet points
+- No sign-off -- signature added separately
+- End with a single clear meeting ask
+- Write from Pawel's perspective -- first person "I"
+- Output ONLY: subject line on first line starting "Subject:", blank line, then email body
+
+CAN USA heritage talking points (use when relevant, adapt freely, never quote verbatim):
+- Direct/cost: "For 40+ years we have done rope access at heights most crews won't touch, at a fraction of scaffolding cost. We train architects to certify in rope access themselves."
+- Informational: "Rope access has been our craft for over four decades. Architects come to us to get certified in it. We bring that depth to FISP without the cost or disruption of scaffolding."
+- Witty/punchy: "40+ years on the ropes. A fraction of scaffolding cost. The only firm credentialed to train architects in rope access, now in FISP."`;
+
+  const btn=document.getElementById('bc-btn-generate');
+  const stopBtn=document.getElementById('bc-btn-stop');
+  const statusEl=document.getElementById('bc-status');
+  btn.disabled=true;
+  stopBtn.style.display='inline-flex';
+  bcStop=false;
+
+  // First render the table
+  renderBulkCreate();
+
+  let done=0,failed=0;
+  for(let i=0;i<list.length;i++){
+    if(bcStop){statusEl.textContent='Stopped at '+done+' of '+list.length;break;}
+    const c=list[i];
+    const emailKey=(c.workEmail||'').replace(/[^a-zA-Z0-9@._-]/g,'_');
+    const rowStatus=document.getElementById('bc-status-'+emailKey);
+    statusEl.textContent='Generating '+( i+1)+' of '+list.length+'...';
+    if(rowStatus)rowStatus.innerHTML='<span style="color:var(--dim)">Generating...</span>';
+
+    const userPrompt='Contact: '+(c.fullName||(c.firstName+' '+c.lastName)).trim()+'\nJob title: '+(c.jobTitle||'')+'\nFirm: '+(c.firmName||'')+'\nTier: '+c.tier+'\nTemplate: '+(c.templateUsed||'B')+'\nUnfiled: '+(c.totalUnfiled||0)+', 10A: '+(c.sub10A||0)+', 10B: '+(c.sub10B||0)+', SWARMP: '+(c.wPriorSWARM||0)+'\n\nLength: '+(lengthMap[length]||length)+', Tone: '+(toneMap[tone]||tone)+'\nAngle: '+(angleMap[angle]||angle)+(custom?'\nInstruction: '+custom:'')+'\n\nWrite subject line and email body now.';
+
+    try{
+      const res=await fetch('/api/claude',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:700,system:sysPrompt,messages:[{role:'user',content:userPrompt}]})
+      });
+      const data=await res.json();
+      if(data.error)throw new Error(data.error.message);
+      const output=data.content[0].text.trim();
+      const lines=output.split('\n');
+      let subject='',bodyLines=[],pastSubject=false;
+      for(const line of lines){
+        if(!pastSubject&&line.toLowerCase().startsWith('subject:')){subject=line.replace(/^subject:\s*/i,'').trim();pastSubject=true;}
+        else if(pastSubject){bodyLines.push(line);}
+      }
+      while(bodyLines.length&&!bodyLines[0].trim())bodyLines.shift();
+      const bodyText=bodyLines.join('\n').trim();
+
+      updateC(c.workEmail,{subjectLine:subject,emailBody:bodyText,refinedEmailBody:null,refined:false,writeTemplateName:tplName});
+      _saveWriteTemplate(tplName,tone,angle,length,custom,subject,bodyText,c);
+      done++;
+      if(rowStatus)rowStatus.innerHTML='<span style="color:var(--green)">Done &mdash; '+esc(subject.slice(0,40))+'</span>';
+    }catch(err){
+      failed++;
+      if(rowStatus)rowStatus.innerHTML='<span style="color:var(--red)">Failed: '+esc(err.message.slice(0,40))+'</span>';
+    }
+    if(i<list.length-1&&!bcStop)await new Promise(r=>setTimeout(r,600));
+  }
+
+  save();
+  btn.disabled=false;
+  stopBtn.style.display='none';
+  statusEl.textContent='';
+  toast('Generated '+done+' emails'+(failed?' ('+failed+' failed)':'')+' as "'+tplName+'"','green');
 }
 
 // ══════════════════════════════════════════════════════════════════
