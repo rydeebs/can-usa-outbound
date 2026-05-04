@@ -4076,17 +4076,24 @@ function reviewGeneratedTemplate(name){
 }
 
 async function sendGeneratedTemplate(name){
+  const gmailStatus=await refreshGmailStatus();
+  if(gmailStatus&&!gmailStatus.ok){
+    toast(gmailStatus.detail||'Gmail is not connected','amber');
+    return;
+  }
   const list=contacts.filter(c=>!c.emailSent&&(c.writeTemplateName||'')===name)
     .filter(c=>(c.subjectLine||'').trim()&&(c.refinedEmailBody||c.emailBody||'').trim());
   if(!list.length){toast('No sendable contacts in this template','amber');return;}
   if(!confirm('Send '+list.length+' emails for "'+name+'"?'))return;
-  let done=0,failed=0;
+  let done=0,failed=0,firstError='';
   for(let i=0;i<list.length;i++){
     try{
       await sendContactNow(list[i]);
       done++;
-    }catch(_e){
+    }catch(e){
       failed++;
+      if(!firstError)firstError=e.message||'Send failed';
+      console.warn('Generated template send failed for',list[i].workEmail,e);
     }
     if(i<list.length-1)await new Promise(r=>setTimeout(r,500));
   }
@@ -4095,7 +4102,10 @@ async function sendGeneratedTemplate(name){
   renderBcGeneratedTemplates();
   refreshGeneratedTemplateFilters();
   updateGlobals();
-  toast('Sent '+done+' from "'+name+'"'+(failed?' ('+failed+' failed)':''),failed?'amber':'green');
+  toast(
+    'Sent '+done+' from "'+name+'"'+(failed?' ('+failed+' failed: '+firstError+')':''),
+    failed?'amber':'green'
+  );
 }
 
 function renderBcGeneratedTemplates(){

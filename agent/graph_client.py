@@ -42,6 +42,7 @@ class GraphClient:
     def __init__(self) -> None:
         self._sender = os.environ.get("SENDER_EMAIL", "")
         self._service = self._build_service()
+        self._profile_email: Optional[str] = None
 
     def _build_service(self):
         try:
@@ -87,8 +88,27 @@ class GraphClient:
 
     def get_profile_email(self) -> str:
         """Returns the Gmail account email for the authenticated token."""
-        profile = self._service.users().getProfile(userId="me").execute()
-        return profile.get("emailAddress", "unknown")
+        if not self._profile_email:
+            profile = self._service.users().getProfile(userId="me").execute()
+            self._profile_email = profile.get("emailAddress", "unknown")
+        return self._profile_email
+
+    def _from_address(self) -> str:
+        """
+        Gmail rejects arbitrary From headers. Use SENDER_EMAIL only when it
+        matches the authenticated Gmail token; otherwise use the token account.
+        """
+        profile_email = self.get_profile_email()
+        if self._sender and self._sender.lower() == profile_email.lower():
+            return self._sender
+        if self._sender and self._sender.lower() != profile_email.lower():
+            log.warning(
+                "SENDER_EMAIL=%s does not match Gmail token account %s; "
+                "sending from token account.",
+                self._sender,
+                profile_email,
+            )
+        return profile_email
 
     # ── Inbox polling ──────────────────────────────────────────────────────
 
@@ -203,7 +223,7 @@ class GraphClient:
             mime_msg = MIMEText(body, "plain")
 
         mime_msg["to"]      = to
-        mime_msg["from"]    = self._sender or self.get_profile_email()
+        mime_msg["from"]    = self._from_address()
         mime_msg["subject"] = subject
         if cc:
             mime_msg["cc"] = ", ".join(cc)
