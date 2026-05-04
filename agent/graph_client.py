@@ -85,6 +85,11 @@ class GraphClient:
         email   = profile.get("emailAddress", "unknown")
         log.info(f"Gmail API connected as {email}")
 
+    def get_profile_email(self) -> str:
+        """Returns the Gmail account email for the authenticated token."""
+        profile = self._service.users().getProfile(userId="me").execute()
+        return profile.get("emailAddress", "unknown")
+
     # ── Inbox polling ──────────────────────────────────────────────────────
 
     def get_new_replies(self) -> list[dict]:
@@ -198,7 +203,7 @@ class GraphClient:
             mime_msg = MIMEText(body, "plain")
 
         mime_msg["to"]      = to
-        mime_msg["from"]    = self._sender
+        mime_msg["from"]    = self._sender or self.get_profile_email()
         mime_msg["subject"] = subject
         if cc:
             mime_msg["cc"] = ", ".join(cc)

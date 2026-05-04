@@ -568,7 +568,66 @@ async def api_send(request: Request):
         )
     except Exception as e:
         log.error(f"Gmail send error: {e}", exc_info=True)
+        if "invalid_grant" in str(e):
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Gmail token expired or revoked. Re-run agent/auth.py "
+                    "and update TOKEN_GOOGLE_JSON in Railway."
+                ),
+            )
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/gmail/status")
+async def gmail_status(request: Request):
+    """Returns the authenticated Gmail account used by the backend."""
+    if not is_authenticated(request):
+        raise HTTPException(status_code=401)
+    try:
+        import sys
+        agent_dir = str(ROOT / "agent")
+        if agent_dir not in sys.path:
+            sys.path.insert(0, agent_dir)
+        from graph_client import GraphClient  # type: ignore
+
+        graph = GraphClient()
+        connected_email = graph.get_profile_email()
+        configured_sender = os.environ.get("SENDER_EMAIL", "")
+        return {
+            "ok": True,
+            "connectedEmail": connected_email,
+            "configuredSender": configured_sender,
+            "senderMatches": (
+                not configured_sender
+                or configured_sender.lower() == connected_email.lower()
+            ),
+        }
+    except FileNotFoundError:
+        return JSONResponse(
+            {
+                "ok": False,
+                "detail": (
+                    "Gmail not connected. Run agent/auth.py and set "
+                    "TOKEN_GOOGLE_JSON in Railway."
+                ),
+            },
+            status_code=503,
+        )
+    except Exception as e:
+        log.error(f"Gmail status error: {e}", exc_info=True)
+        if "invalid_grant" in str(e):
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "detail": (
+                        "Gmail token expired or revoked. Re-run agent/auth.py "
+                        "and update TOKEN_GOOGLE_JSON in Railway."
+                    ),
+                },
+                status_code=503,
+            )
+        return JSONResponse({"ok": False, "detail": str(e)}, status_code=500)
 
 # ── Bounced contacts ──────────────────────────────────────────────────────
 
