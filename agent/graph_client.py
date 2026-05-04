@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import email as email_lib
+import json
 import logging
 import os
 import re
@@ -31,6 +32,25 @@ SCOPES = [
 ]
 
 INBOUND_LABEL = "Agent Processed"
+
+
+def _clean_token_json(raw: str) -> str:
+    """
+    Railway env vars are sometimes pasted with extra characters after the JSON.
+    Extract the first JSON object and write it back in canonical form.
+    """
+    try:
+        decoder = json.JSONDecoder()
+        token, end = decoder.raw_decode(raw.strip())
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            "TOKEN_GOOGLE_JSON is not valid JSON. Copy only the contents of "
+            "agent/token_google.json into Railway."
+        ) from e
+    extra = raw.strip()[end:].strip()
+    if extra:
+        log.warning("TOKEN_GOOGLE_JSON had extra trailing characters; ignoring them.")
+    return json.dumps(token, ensure_ascii=False)
 
 
 class GraphClient:
@@ -60,7 +80,7 @@ class GraphClient:
         token_json = os.environ.get("TOKEN_GOOGLE_JSON")
         if token_json:
             TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-            TOKEN_FILE.write_text(token_json, encoding="utf-8")
+            TOKEN_FILE.write_text(_clean_token_json(token_json), encoding="utf-8")
 
         if not TOKEN_FILE.exists():
             raise FileNotFoundError(

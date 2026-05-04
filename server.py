@@ -349,6 +349,23 @@ def _send_error_detail(exc: Exception) -> str:
     return str(exc)
 
 
+def _clean_google_token_json(raw: str) -> str:
+    """
+    Accepts a pasted TOKEN_GOOGLE_JSON value and normalizes the first JSON
+    object. This avoids failures from accidental trailing clipboard text.
+    """
+    try:
+        token, end = json.JSONDecoder().raw_decode(raw.strip())
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            "TOKEN_GOOGLE_JSON is not valid JSON. Copy only the contents of "
+            "agent/token_google.json into Railway."
+        ) from e
+    if raw.strip()[end:].strip():
+        log.warning("TOKEN_GOOGLE_JSON had extra trailing characters; ignoring them.")
+    return json.dumps(token, ensure_ascii=False)
+
+
 # ── Token cache bootstrap ──────────────────────────────────────────────────
 def _bootstrap_token_cache() -> None:
     """
@@ -360,10 +377,11 @@ def _bootstrap_token_cache() -> None:
     if google_token:
         try:
             google_file.parent.mkdir(parents=True, exist_ok=True)
-            google_file.write_text(google_token, encoding="utf-8")
+            google_file.write_text(_clean_google_token_json(google_token), encoding="utf-8")
             log.info("Google token written from TOKEN_GOOGLE_JSON env var.")
         except Exception as e:
             log.error(f"Google token write error: {e}")
+            _write_gmail_token_alert(str(e))
     elif not google_file.exists():
         log.warning(
             "token_google.json not found. "
