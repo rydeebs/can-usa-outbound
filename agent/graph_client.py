@@ -34,23 +34,53 @@ SCOPES = [
 INBOUND_LABEL = "Agent Processed"
 
 
-def _clean_token_json(raw: str) -> str:
+def _normalize_token_json_value(raw: str) -> dict:
     """
     Railway env vars are sometimes pasted with extra characters after the JSON.
-    Extract the first JSON object and write it back in canonical form.
+    Extract and validate the first token JSON object.
     """
+    value = raw.strip().lstrip("\ufeff")
     try:
         decoder = json.JSONDecoder()
-        token, end = decoder.raw_decode(raw.strip())
+        token, end = decoder.raw_decode(value)
     except json.JSONDecodeError as e:
         raise ValueError(
             "TOKEN_GOOGLE_JSON is not valid JSON. Copy only the contents of "
             "agent/token_google.json into Railway."
         ) from e
-    extra = raw.strip()[end:].strip()
+
+    # Some platforms/users paste the JSON as a quoted string. Decode one more
+    # layer if needed, then parse the inner JSON object.
+    if isinstance(token, str):
+        inner_value = token.strip().lstrip("\ufeff")
+        try:
+            token, inner_end = decoder.raw_decode(inner_value)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                "TOKEN_GOOGLE_JSON is a JSON string, but its contents are not "
+                "valid token JSON."
+            ) from e
+        inner_extra = inner_value[inner_end:].strip()
+        if inner_extra:
+            log.warning("TOKEN_GOOGLE_JSON inner value had trailing characters; ignoring them.")
+
+    extra = value[end:].strip()
     if extra:
         log.warning("TOKEN_GOOGLE_JSON had extra trailing characters; ignoring them.")
-    return json.dumps(token, ensure_ascii=False)
+    if not isinstance(token, dict):
+        raise ValueError("TOKEN_GOOGLE_JSON must be a JSON object.")
+    required = {"token", "refresh_token", "client_id", "client_secret"}
+    missing = sorted(k for k in required if not token.get(k))
+    if missing:
+        raise ValueError(
+            "TOKEN_GOOGLE_JSON is missing required token field(s): "
+            + ", ".join(missing)
+        )
+    return token
+
+
+def _clean_token_json(raw: str) -> str:
+    return json.dumps(_normalize_token_json_value(raw), ensure_ascii=False)
 
 
 class GraphClient:

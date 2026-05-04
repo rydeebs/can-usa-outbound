@@ -354,15 +354,37 @@ def _clean_google_token_json(raw: str) -> str:
     Accepts a pasted TOKEN_GOOGLE_JSON value and normalizes the first JSON
     object. This avoids failures from accidental trailing clipboard text.
     """
+    value = raw.strip().lstrip("\ufeff")
     try:
-        token, end = json.JSONDecoder().raw_decode(raw.strip())
+        decoder = json.JSONDecoder()
+        token, end = decoder.raw_decode(value)
     except json.JSONDecodeError as e:
         raise ValueError(
             "TOKEN_GOOGLE_JSON is not valid JSON. Copy only the contents of "
             "agent/token_google.json into Railway."
         ) from e
-    if raw.strip()[end:].strip():
+    if isinstance(token, str):
+        inner_value = token.strip().lstrip("\ufeff")
+        try:
+            token, inner_end = decoder.raw_decode(inner_value)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                "TOKEN_GOOGLE_JSON is a JSON string, but its contents are not "
+                "valid token JSON."
+            ) from e
+        if inner_value[inner_end:].strip():
+            log.warning("TOKEN_GOOGLE_JSON inner value had trailing characters; ignoring them.")
+    if value[end:].strip():
         log.warning("TOKEN_GOOGLE_JSON had extra trailing characters; ignoring them.")
+    if not isinstance(token, dict):
+        raise ValueError("TOKEN_GOOGLE_JSON must be a JSON object.")
+    required = {"token", "refresh_token", "client_id", "client_secret"}
+    missing = sorted(k for k in required if not token.get(k))
+    if missing:
+        raise ValueError(
+            "TOKEN_GOOGLE_JSON is missing required token field(s): "
+            + ", ".join(missing)
+        )
     return json.dumps(token, ensure_ascii=False)
 
 
