@@ -67,9 +67,10 @@ class SequenceEngine:
         now = datetime.now(timezone.utc)
 
         for contact in pending:
-            current_step = contact.get("sequenceStep", 0)
-            next_step = current_step + 1
-            if next_step > 4:
+            # The frontend stores sequenceStep as the next step to send:
+            # 1 after the initial email, 2 after day-4, etc.
+            step_to_send = contact.get("sequenceStep", 0)
+            if step_to_send < 1 or step_to_send > 4:
                 continue  # All follow-ups sent
 
             # Find when the initial email was sent
@@ -79,14 +80,14 @@ class SequenceEngine:
                 continue
 
             days_elapsed = (now - initial_sent_at).days
-            days_required = DAYS_FROM_INITIAL.get(next_step, 99)
+            days_required = DAYS_FROM_INITIAL.get(step_to_send, 99)
 
             if days_elapsed >= days_required:
                 log.info(
                     f"{contact['firstName']} {contact['lastName']} — "
-                    f"step {next_step} due ({days_elapsed}d elapsed, {days_required}d required)"
+                    f"step {step_to_send} due ({days_elapsed}d elapsed, {days_required}d required)"
                 )
-                due.append((contact, next_step))
+                due.append((contact, step_to_send))
 
         return due
 
@@ -95,6 +96,14 @@ class SequenceEngine:
         seq = self._store.get_seq_emails(contact_id)
         step0 = seq.get("0", {})
         sent_at_str = step0.get("sentAt")
+        if not sent_at_str:
+            contact = self._store.get(contact_id)
+            if contact:
+                sent_at_str = (
+                    contact.get("initialEmailSentAt")
+                    or contact.get("emailSentAt")
+                    or contact.get("sentAt")
+                )
         if sent_at_str:
             try:
                 return datetime.fromisoformat(sent_at_str)
@@ -217,7 +226,7 @@ class SequenceEngine:
         and saves the email body to seq_emails.json for future reference.
         """
         self._store.save_seq_email(contact_id, step, subject, body)
-        updates = {"sequenceStep": step, "emailSent": True}
+        updates = {"sequenceStep": step + 1, "emailSent": True}
         if thread_id:
             updates["gmailThreadId"] = thread_id
         self._store.update(contact_id, updates)

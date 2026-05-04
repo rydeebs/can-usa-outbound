@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import email as email_lib
+import json
 import logging
 import os
 import re
@@ -33,6 +34,25 @@ SCOPES = [
 INBOUND_LABEL = "Agent Processed"
 
 
+def _clean_token_json(raw: str) -> str:
+    """
+    Railway env vars are sometimes pasted with extra characters after the JSON.
+    Extract the first JSON object and write it back in canonical form.
+    """
+    try:
+        decoder = json.JSONDecoder()
+        token, end = decoder.raw_decode(raw.strip())
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            "TOKEN_GOOGLE_JSON is not valid JSON. Copy only the contents of "
+            "agent/token_google.json into Railway."
+        ) from e
+    extra = raw.strip()[end:].strip()
+    if extra:
+        log.warning("TOKEN_GOOGLE_JSON had extra trailing characters; ignoring them.")
+    return json.dumps(token, ensure_ascii=False)
+
+
 class GraphClient:
     """
     Gmail API client with the same interface as the original Microsoft
@@ -42,6 +62,7 @@ class GraphClient:
     def __init__(self) -> None:
         self._sender = os.environ.get("SENDER_EMAIL", "")
         self._service = self._build_service()
+        self._profile_email: Optional[str] = None
 
     def _build_service(self):
         try:
@@ -59,7 +80,7 @@ class GraphClient:
         token_json = os.environ.get("TOKEN_GOOGLE_JSON")
         if token_json:
             TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-            TOKEN_FILE.write_text(token_json, encoding="utf-8")
+            TOKEN_FILE.write_text(_clean_token_json(token_json), encoding="utf-8")
 
         if not TOKEN_FILE.exists():
             raise FileNotFoundError(
@@ -84,6 +105,30 @@ class GraphClient:
         profile = self._service.users().getProfile(userId="me").execute()
         email   = profile.get("emailAddress", "unknown")
         log.info(f"Gmail API connected as {email}")
+
+    def get_profile_email(self) -> str:
+        """Returns the Gmail account email for the authenticated token."""
+        if not self._profile_email:
+            profile = self._service.users().getProfile(userId="me").execute()
+            self._profile_email = profile.get("emailAddress", "unknown")
+        return self._profile_email
+
+    def _from_address(self) -> str:
+        """
+        Gmail rejects arbitrary From headers. Use SENDER_EMAIL only when it
+        matches the authenticated Gmail token; otherwise use the token account.
+        """
+        profile_email = self.get_profile_email()
+        if self._sender and self._sender.lower() == profile_email.lower():
+            return self._sender
+        if self._sender and self._sender.lower() != profile_email.lower():
+            log.warning(
+                "SENDER_EMAIL=%s does not match Gmail token account %s; "
+                "sending from token account.",
+                self._sender,
+                profile_email,
+            )
+        return profile_email
 
     # ── Inbox polling ──────────────────────────────────────────────────────
 
@@ -198,7 +243,7 @@ class GraphClient:
             mime_msg = MIMEText(body, "plain")
 
         mime_msg["to"]      = to
-        mime_msg["from"]    = self._sender
+        mime_msg["from"]    = self._from_address()
         mime_msg["subject"] = subject
         if cc:
             mime_msg["cc"] = ", ".join(cc)

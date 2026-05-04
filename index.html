@@ -400,9 +400,10 @@ tr:hover td{background:rgba(255,255,255,0.02)}
         <option value="all">All templates</option>
       </select>
       <span style="font-size:12px;color:var(--dim)">Ready to send: <span id="q-send-count" style="color:var(--green);font-weight:600">0</span></span>
+      <span id="gmail-send-status" style="font-size:12px;color:var(--dim)"></span>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6;max-width:760px">
-      Groups approved in Bulk approve appear here. Sending from this tab dispatches real emails to all contacts in that approved group.
+      Approved groups and Bulk Create batches appear here. Sending from this tab dispatches real emails through the connected Gmail account.
     </div>
     <div id="queue-send-groups"></div>
   </div>
@@ -518,7 +519,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
 
     <div style="background:rgba(123,104,200,0.07);border:1px solid rgba(123,104,200,0.2);border-radius:8px;padding:14px 16px;margin-bottom:16px">
       <div style="font-size:13px;font-weight:600;color:var(--violet);margin-bottom:4px">✦ Bulk create emails with Claude</div>
-      <div style="font-size:12px;color:var(--muted);line-height:1.6">Filter contacts with empty or broken emails, set style options, then generate all at once. Claude writes a unique email for each contact using their FISP data. Review individually before sending.</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.6">Filter contacts with empty or broken emails, set style options, then generate all at once. Claude writes a unique email for each contact using their FISP data. Generated batches appear in Bulk Send automatically.</div>
     </div>
 
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:16px">
@@ -980,6 +981,16 @@ function saveSeqField(contactId,step,field,value){
   seqEmails[contactId][step][field]=value;save();
 }
 
+function markSeqEmailSent(contactId,step,subject,body){
+  if(!seqEmails[contactId])seqEmails[contactId]={};
+  seqEmails[contactId][step]={
+    ...(seqEmails[contactId][step]||{}),
+    subject,
+    body,
+    sentAt:new Date().toISOString()
+  };
+}
+
 // ══════════════════════════════════════════════════════════════════
 // HTML TEMPLATE APPLICATION
 // ══════════════════════════════════════════════════════════════════
@@ -1124,6 +1135,7 @@ function toast(msg,type='green'){
 }
 function badge(cls,txt){return`<span class="badge ${cls}">${txt}</span>`;}
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function attrEsc(s){return esc(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function isAddressNotFound(c){
   if(!c)return false;
   if(c.bounced===true||c.bounced==='true'||c.bounced===1||c.bounced==='1')return true;
@@ -1543,7 +1555,7 @@ async function doSend(){
         html:htmlContent,
         htmlSignature:userSignature,
         contactId:String(c.id),
-        threadId:c.gmailThreadId||null,
+        threadId:null,
       })
     });
     if(!r.ok){
@@ -1552,9 +1564,11 @@ async function doSend(){
       return;
     }
     const sendData=await r.json().catch(()=>({}));
+    markSeqEmailSent(c.id,0,subj,activeBody);
     updateC(selectedQueueEmail,{
       emailSent:true,approved:true,emailBody:activeBody,
       subjectLine:subj,sequenceStep:1,
+      initialEmailSentAt:new Date().toISOString(),
       gmailThreadId:sendData.threadId||null,
       gmailMessageId:sendData.messageId||null,
     });
@@ -1584,7 +1598,7 @@ async function sendContactNow(c){
       html:htmlContent,
       htmlSignature:userSignature,
       contactId:String(c.id),
-      threadId:c.gmailThreadId||null,
+      threadId:null,
     })
   });
   if(!r.ok){
@@ -1592,8 +1606,10 @@ async function sendContactNow(c){
     throw new Error(err.detail||'Send failed');
   }
   const sendData=await r.json().catch(()=>({}));
+  markSeqEmailSent(c.id,0,subj,body);
   updateC(c.workEmail,{
     emailSent:true,approved:true,emailBody:body,subjectLine:subj,sequenceStep:1,
+    initialEmailSentAt:new Date().toISOString(),
     gmailThreadId:sendData.threadId||c.gmailThreadId||null,
     gmailMessageId:sendData.messageId||null,
   });
@@ -1935,6 +1951,7 @@ function setQueueTab(tab){
     if(bsend)bsend.style.display='';
     refreshBulkSendTemplateFilter();
     renderBulkSend();
+    refreshGmailStatus();
   }else if(tab==='individual'){
     if(ind)ind.style.display='flex';
     refreshGeneratedTemplateFilters();
@@ -1977,12 +1994,18 @@ function getQueueBulkGroups(sourceList){
   });
 }
 
+function hasSendableGeneratedEmail(c){
+  return !!(c.writeTemplateName||'').trim()
+    && !!(c.subjectLine||'').trim()
+    && !!(c.refinedEmailBody||c.emailBody||'').trim();
+}
+
 function getBulkSendFiltered(){
   const s=(document.getElementById('q-send-search')?.value||'').toLowerCase();
   const ft=document.getElementById('q-send-tier')?.value||'all';
   const fp=document.getElementById('q-send-template')?.value||'all';
   return contacts
-    .filter(c=>c.approved&&!c.emailSent)
+    .filter(c=>!c.emailSent&&(c.approved||hasSendableGeneratedEmail(c)))
     .filter(c=>ft==='all'||String(c.tier)===ft)
     .filter(c=>{
       if(fp==='all')return true;
@@ -1997,11 +2020,41 @@ function getBulkSendGroups(sourceList){
   return getQueueBulkGroups(sourceList||getBulkSendFiltered());
 }
 
+let _gmailStatusCache=null;
+async function refreshGmailStatus(){
+  const el=document.getElementById('gmail-send-status');
+  if(!el)return null;
+  el.textContent='Checking Gmail...';
+  el.style.color='var(--dim)';
+  try{
+    const r=await fetch('/api/gmail/status');
+    const data=await r.json().catch(()=>({ok:false,detail:'Gmail status failed'}));
+    _gmailStatusCache=data;
+    if(!r.ok||!data.ok){
+      el.textContent='Gmail disconnected';
+      el.style.color='var(--red)';
+      return data;
+    }
+    const sender=data.configuredSender||data.connectedEmail;
+    el.textContent='Gmail: '+sender;
+    el.style.color=data.senderMatches?'var(--green)':'var(--amber)';
+    el.title=data.senderMatches
+      ?'Connected Gmail account'
+      :'Connected token is '+data.connectedEmail+'; SENDER_EMAIL is '+data.configuredSender;
+    return data;
+  }catch(e){
+    _gmailStatusCache={ok:false,detail:e.message};
+    el.textContent='Gmail status unavailable';
+    el.style.color='var(--red)';
+    return _gmailStatusCache;
+  }
+}
+
 function refreshBulkSendTemplateFilter(){
   const el=document.getElementById('q-send-template');
   if(!el)return;
   const current=el.value||'all';
-  const pending=contacts.filter(c=>c.approved&&!c.emailSent);
+  const pending=contacts.filter(c=>!c.emailSent&&(c.approved||hasSendableGeneratedEmail(c)));
   const baseTpls=[...new Set(pending.map(c=>c.templateUsed||'B'))].sort();
   const generated=[...new Set(pending.map(c=>c.writeTemplateName||'').filter(Boolean))].sort();
   let html='<option value="all">All templates</option>';
@@ -2033,32 +2086,47 @@ function renderBulkSend(){
       +'<span style="font-size:12px;color:var(--text)">'+g.contacts.length+' contacts</span>'
       +'<span style="font-size:11px;color:var(--dim)">'+esc(label)+'</span>'
       +'<div style="flex:1"></div>'
-      +'<button class="btn btn-solid" style="font-size:11px;padding:4px 10px" onclick="sendApprovedGroup(this.dataset.key)" data-key="'+esc(g.key)+'">Send all '+g.contacts.length+'</button>'
+      +'<button class="btn btn-solid" style="font-size:11px;padding:4px 10px" onclick="sendApprovedGroup(this.dataset.key)" data-key="'+attrEsc(g.key)+'">Send all '+g.contacts.length+'</button>'
       +'</div>';
   }).join('');
 }
 
 async function sendApprovedGroup(groupKey){
+  const gmailStatus=await refreshGmailStatus();
+  if(gmailStatus&&!gmailStatus.ok){
+    toast(gmailStatus.detail||'Gmail is not connected','amber');
+    return;
+  }
   const groups=getBulkSendGroups(getBulkSendFiltered());
   const group=groups.find(g=>g.key===groupKey);
   if(!group){toast('Group not found in current filter','amber');return;}
   const sendable=group.contacts
-    .filter(c=>c.approved&&!c.emailSent)
+    .filter(c=>!c.emailSent&&(c.approved||hasSendableGeneratedEmail(c)))
     .filter(c=>(c.subjectLine||'').trim()&&(c.refinedEmailBody||c.emailBody||'').trim());
   if(!sendable.length){toast('No sendable contacts in this group','amber');return;}
   const tplInfo=TPL[group.tpl]||{label:'Template '+group.tpl};
   const label='Tier '+group.tier+' / '+tplInfo.label+(group.writeTemplateName?(' / '+group.writeTemplateName):'');
   if(!confirm('Send '+sendable.length+' approved emails for '+label+'?'))return;
-  let done=0,failed=0;
+  let done=0,failed=0,firstError='';
   for(let i=0;i<sendable.length;i++){
-    try{await sendContactNow(sendable[i]);done++;}catch(_e){failed++;}
+    try{
+      await sendContactNow(sendable[i]);
+      done++;
+    }catch(e){
+      failed++;
+      if(!firstError)firstError=e.message||'Send failed';
+      console.warn('Bulk send failed for',sendable[i].workEmail,e);
+    }
     if(i<sendable.length-1)await new Promise(r=>setTimeout(r,500));
   }
   save();
   renderBulkSend();
   renderQueueGroups();
   updateGlobals();
-  toast('Sent '+done+' from group'+(failed?' ('+failed+' failed)':''),failed?'amber':'green');
+  toast(
+    'Sent '+done+' from group'+(failed?' ('+failed+' failed: '+firstError+')':''),
+    failed?'amber':'green'
+  );
 }
 
 function buildGroupCard(g){
@@ -2438,6 +2506,7 @@ function renderSeqEditorBody(contactOrId){
     ? contactOrId
     : getC(contactOrId);
   if(!c){document.getElementById('seq-editor-body').innerHTML='<div style="padding:20px;color:var(--dim)">Contact not found</div>';return;}
+  const contactId=c.id;
   const tplKey=`T${c.tier}-${c.templateUsed}`;
   const hasHtml=!!htmlTemplates[tplKey];
   let html=`<div style="margin-bottom:14px;padding:10px 12px;background:rgba(255,255,255,0.03);border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -2560,7 +2629,14 @@ async function sendSeqStep(contactId,step){
       toast((err.detail||'Send failed'),'amber');
       return;
     }
-    updateC(contactId,{emailSent:true,sequenceStep:step+1});
+    const sendData=await r.json().catch(()=>({}));
+    markSeqEmailSent(contactId,step,email.subject,email.body);
+    updateC(contactId,{
+      emailSent:true,
+      sequenceStep:step+1,
+      gmailThreadId:sendData.threadId||c.gmailThreadId||null,
+      gmailMessageId:sendData.messageId||null
+    });
     toast('Sent via Gmail ✓','green');
   }catch(e){
     toast('Network error: '+e.message,'amber');
@@ -3245,8 +3321,9 @@ function _renderAlertCards(el,alerts,showActions){
   el.innerHTML=alerts.map(a=>{
     const isHot=a.type==='HOT_LEAD', isRisk=a.type==='AT_RISK', isInbound=a.type==='NEW_INBOUND';
     const isAddrNF=a.type==='ADDRESS_NOT_FOUND'||a.type==='BOUNCE';
-    const typeCls=isHot?'alert-type-hot':isRisk?'alert-type-risk':isAddrNF?'alert-type-risk':'alert-type-inbound';
-    const typeLabel=isHot?'🟢 Hot lead':isRisk?'🔴 At risk':isAddrNF?'⚠️ Address not found':'📬 New inbound';
+    const isGmail=a.type==='GMAIL_TOKEN';
+    const typeCls=isHot?'alert-type-hot':isRisk?'alert-type-risk':(isAddrNF||isGmail)?'alert-type-risk':'alert-type-inbound';
+    const typeLabel=isHot?'🟢 Hot lead':isRisk?'🔴 At risk':isAddrNF?'⚠️ Address not found':isGmail?'⚠️ Gmail token':'📬 New inbound';
     const dt=new Date(a.timestamp);
     const timeStr=dt.toLocaleDateString([],{month:'short',day:'numeric'})+' '+dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
     const c=a.contact||{};
@@ -3942,7 +4019,7 @@ Rules:
       }
       while(bodyLines.length&&!bodyLines[0].trim())bodyLines.shift();
       const body = bodyLines.join('\n').trim();
-      updateC(c.workEmail,{subjectLine:subject,emailBody:body,refinedEmailBody:null,refined:false,writeTemplateName:tplName});
+      updateC(c.workEmail,{subjectLine:subject,emailBody:body,refinedEmailBody:null,refined:false,approved:true,writeTemplateName:tplName});
       _saveWriteTemplate(tplName,tone,angle,length,custom,subject,body,c);
       done++;
     }catch(err){ failed++; }
@@ -3955,6 +4032,8 @@ Rules:
   if(statusEl) statusEl.textContent = done+' done'+(failed?' ('+failed+' failed)':'');
   renderBcGeneratedTemplates();
   refreshGeneratedTemplateFilters();
+  refreshBulkSendTemplateFilter();
+  renderBulkSend();
   toast('Group '+(groupIdx+1)+': '+done+' emails generated as "'+tplName+'"','green');
 }
 
@@ -3997,17 +4076,24 @@ function reviewGeneratedTemplate(name){
 }
 
 async function sendGeneratedTemplate(name){
+  const gmailStatus=await refreshGmailStatus();
+  if(gmailStatus&&!gmailStatus.ok){
+    toast(gmailStatus.detail||'Gmail is not connected','amber');
+    return;
+  }
   const list=contacts.filter(c=>!c.emailSent&&(c.writeTemplateName||'')===name)
     .filter(c=>(c.subjectLine||'').trim()&&(c.refinedEmailBody||c.emailBody||'').trim());
   if(!list.length){toast('No sendable contacts in this template','amber');return;}
   if(!confirm('Send '+list.length+' emails for "'+name+'"?'))return;
-  let done=0,failed=0;
+  let done=0,failed=0,firstError='';
   for(let i=0;i<list.length;i++){
     try{
       await sendContactNow(list[i]);
       done++;
-    }catch(_e){
+    }catch(e){
       failed++;
+      if(!firstError)firstError=e.message||'Send failed';
+      console.warn('Generated template send failed for',list[i].workEmail,e);
     }
     if(i<list.length-1)await new Promise(r=>setTimeout(r,500));
   }
@@ -4016,7 +4102,10 @@ async function sendGeneratedTemplate(name){
   renderBcGeneratedTemplates();
   refreshGeneratedTemplateFilters();
   updateGlobals();
-  toast('Sent '+done+' from "'+name+'"'+(failed?' ('+failed+' failed)':''),failed?'amber':'green');
+  toast(
+    'Sent '+done+' from "'+name+'"'+(failed?' ('+failed+' failed: '+firstError+')':''),
+    failed?'amber':'green'
+  );
 }
 
 function renderBcGeneratedTemplates(){
@@ -4192,7 +4281,7 @@ CAN USA heritage talking points (use when relevant, adapt freely, never quote ve
       while(bodyLines.length&&!bodyLines[0].trim())bodyLines.shift();
       const bodyText=bodyLines.join('\n').trim();
 
-      updateC(c.workEmail,{subjectLine:subject,emailBody:bodyText,refinedEmailBody:null,refined:false,writeTemplateName:tplName});
+      updateC(c.workEmail,{subjectLine:subject,emailBody:bodyText,refinedEmailBody:null,refined:false,approved:true,writeTemplateName:tplName});
       _saveWriteTemplate(tplName,tone,angle,length,custom,subject,bodyText,c);
       done++;
       if(rowStatus)rowStatus.innerHTML='<span style="color:var(--green)">Done &mdash; '+esc(subject.slice(0,40))+'</span>';
@@ -4209,6 +4298,8 @@ CAN USA heritage talking points (use when relevant, adapt freely, never quote ve
   statusEl.textContent='';
   renderBcGeneratedTemplates();
   refreshGeneratedTemplateFilters();
+  refreshBulkSendTemplateFilter();
+  renderBulkSend();
   toast('Generated '+done+' emails'+(failed?' ('+failed+' failed)':'')+' as "'+tplName+'"','green');
 }
 

@@ -144,7 +144,7 @@ class ContactStore:
             if c.get("emailSent")
             and not c.get("replied")
             and not c.get("paused")
-            and c.get("sequenceStep", 0) < 4
+            and 1 <= c.get("sequenceStep", 0) <= 4
         ]
 
     def get_for_review(self) -> list[dict]:
