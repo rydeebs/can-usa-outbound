@@ -210,7 +210,7 @@ def _send_due_followups(
             thread_id_new = result.get("threadId") if result else thread_id
             engine.record_step_sent(contact["id"], step, subject, body_text)
             store.update(contact["id"], {
-                "sequenceStep": step,
+                "sequenceStep": step + 1,
                 "gmailThreadId": thread_id_new or thread_id,
             })
             log.info(

@@ -535,7 +535,10 @@ async def api_send(request: Request):
                 full_html = full_html.replace("</body>", f"{sig_block}{pixel_tag}</body>")
             else:
                 full_html = full_html + sig_block + pixel_tag
-            graph.send_email(to=to, subject=subject, body=text, html=full_html)
+            result = graph.send_email(
+                to=to, subject=subject, body=text,
+                html=full_html, thread_id=thread_id
+            )
 
         else:
             # No HTML template — build HTML from plain text + rich sig + pixel

@@ -1,12 +1,14 @@
 """
-evaluator.py — Step 3 of the pipeline.
+evaluator.py - Step 3 of the pipeline.
 Quality-checks the draft reply. If it fails, main.py asks the responder to fix it.
-Uses claude-haiku-4-5 — evaluation is a structured task, not creative.
+Uses claude-haiku-4-5 - evaluation is a structured task, not creative.
 """
 from __future__ import annotations
+
 import json
 import logging
 from pathlib import Path
+
 import anthropic
 
 log = logging.getLogger("evaluator")
@@ -16,7 +18,7 @@ PROMPT = (Path(__file__).parent / "prompts" / "evaluator.md").read_text()
 
 def evaluate_reply(draft: str, route: dict) -> dict:
     """
-    Returns verdict dict with keys: pass, score, flags, fix_instructions
+    Returns verdict dict with keys: pass, score, flags, fix_instructions.
     """
     user_message = f"""
 Reply category: {route.get('category')}
@@ -43,7 +45,15 @@ Evaluate this draft.
         result = json.loads(raw)
     except json.JSONDecodeError:
         log.error(f"Evaluator returned non-JSON: {raw}")
-        result = {"pass": False, "score": 5, "flags": ["parse_error"], "fix_instructions": "Rewrite the response cleanly."}
+        result = {
+            "pass": False,
+            "score": 5,
+            "flags": ["parse_error"],
+            "fix_instructions": "Rewrite the response cleanly.",
+        }
     if not result.get("pass"):
-        log.warning(f"Evaluation failed: {result.get('flags')} — {result.get('fix_instructions')}")
+        log.warning(
+            f"Evaluation failed: {result.get('flags')} - "
+            f"{result.get('fix_instructions')}"
+        )
     return result

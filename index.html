@@ -980,6 +980,16 @@ function saveSeqField(contactId,step,field,value){
   seqEmails[contactId][step][field]=value;save();
 }
 
+function markSeqEmailSent(contactId,step,subject,body){
+  if(!seqEmails[contactId])seqEmails[contactId]={};
+  seqEmails[contactId][step]={
+    ...(seqEmails[contactId][step]||{}),
+    subject,
+    body,
+    sentAt:new Date().toISOString()
+  };
+}
+
 // ══════════════════════════════════════════════════════════════════
 // HTML TEMPLATE APPLICATION
 // ══════════════════════════════════════════════════════════════════
@@ -1552,9 +1562,11 @@ async function doSend(){
       return;
     }
     const sendData=await r.json().catch(()=>({}));
+    markSeqEmailSent(c.id,0,subj,activeBody);
     updateC(selectedQueueEmail,{
       emailSent:true,approved:true,emailBody:activeBody,
       subjectLine:subj,sequenceStep:1,
+      initialEmailSentAt:new Date().toISOString(),
       gmailThreadId:sendData.threadId||null,
       gmailMessageId:sendData.messageId||null,
     });
@@ -1592,8 +1604,10 @@ async function sendContactNow(c){
     throw new Error(err.detail||'Send failed');
   }
   const sendData=await r.json().catch(()=>({}));
+  markSeqEmailSent(c.id,0,subj,body);
   updateC(c.workEmail,{
     emailSent:true,approved:true,emailBody:body,subjectLine:subj,sequenceStep:1,
+    initialEmailSentAt:new Date().toISOString(),
     gmailThreadId:sendData.threadId||c.gmailThreadId||null,
     gmailMessageId:sendData.messageId||null,
   });
@@ -2438,6 +2452,7 @@ function renderSeqEditorBody(contactOrId){
     ? contactOrId
     : getC(contactOrId);
   if(!c){document.getElementById('seq-editor-body').innerHTML='<div style="padding:20px;color:var(--dim)">Contact not found</div>';return;}
+  const contactId=c.id;
   const tplKey=`T${c.tier}-${c.templateUsed}`;
   const hasHtml=!!htmlTemplates[tplKey];
   let html=`<div style="margin-bottom:14px;padding:10px 12px;background:rgba(255,255,255,0.03);border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -2560,7 +2575,14 @@ async function sendSeqStep(contactId,step){
       toast((err.detail||'Send failed'),'amber');
       return;
     }
-    updateC(contactId,{emailSent:true,sequenceStep:step+1});
+    const sendData=await r.json().catch(()=>({}));
+    markSeqEmailSent(contactId,step,email.subject,email.body);
+    updateC(contactId,{
+      emailSent:true,
+      sequenceStep:step+1,
+      gmailThreadId:sendData.threadId||c.gmailThreadId||null,
+      gmailMessageId:sendData.messageId||null
+    });
     toast('Sent via Gmail ✓','green');
   }catch(e){
     toast('Network error: '+e.message,'amber');
