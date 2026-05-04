@@ -3321,8 +3321,9 @@ function _renderAlertCards(el,alerts,showActions){
   el.innerHTML=alerts.map(a=>{
     const isHot=a.type==='HOT_LEAD', isRisk=a.type==='AT_RISK', isInbound=a.type==='NEW_INBOUND';
     const isAddrNF=a.type==='ADDRESS_NOT_FOUND'||a.type==='BOUNCE';
-    const typeCls=isHot?'alert-type-hot':isRisk?'alert-type-risk':isAddrNF?'alert-type-risk':'alert-type-inbound';
-    const typeLabel=isHot?'🟢 Hot lead':isRisk?'🔴 At risk':isAddrNF?'⚠️ Address not found':'📬 New inbound';
+    const isGmail=a.type==='GMAIL_TOKEN';
+    const typeCls=isHot?'alert-type-hot':isRisk?'alert-type-risk':(isAddrNF||isGmail)?'alert-type-risk':'alert-type-inbound';
+    const typeLabel=isHot?'🟢 Hot lead':isRisk?'🔴 At risk':isAddrNF?'⚠️ Address not found':isGmail?'⚠️ Gmail token':'📬 New inbound';
     const dt=new Date(a.timestamp);
     const timeStr=dt.toLocaleDateString([],{month:'short',day:'numeric'})+' '+dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
     const c=a.contact||{};

@@ -30,6 +30,7 @@ import logging
 import os
 import secrets
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 import base64
@@ -52,6 +53,7 @@ DATA_DIR   = ROOT / "data"
 STATE_FILE = DATA_DIR / "state.json"
 INDEX_HTML = ROOT / "index.html"
 TOKEN_FILE = ROOT / "agent" / "token_cache.json"
+ALERTS_FILE = DATA_DIR / "alerts.json"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -273,6 +275,61 @@ def _generate_token(email: str, contact_id: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
+def _append_or_update_alert(alert: dict) -> None:
+    """Writes a platform alert with stable-id deduping."""
+    try:
+        ALERTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        alerts = []
+        if ALERTS_FILE.exists():
+            try:
+                alerts = json.loads(ALERTS_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                alerts = []
+        alerts = [a for a in alerts if a.get("id") != alert.get("id")]
+        alerts.insert(0, alert)
+        alerts = alerts[:200]
+        ALERTS_FILE.write_text(
+            json.dumps(alerts, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        log.warning(f"Could not write platform alert: {e}")
+
+
+def _write_gmail_token_alert(detail: str) -> None:
+    """Creates an in-app alert when Gmail OAuth needs re-authentication."""
+    _append_or_update_alert({
+        "id": "gmail_token_invalid",
+        "type": "GMAIL_TOKEN",
+        "emoji": "⚠️",
+        "title": "Gmail token needs updating",
+        "detail": detail,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "read": False,
+    })
+
+
+def _clear_gmail_token_alert() -> None:
+    """Marks the Gmail token alert read after a successful Gmail check."""
+    try:
+        if not ALERTS_FILE.exists():
+            return
+        alerts = json.loads(ALERTS_FILE.read_text(encoding="utf-8"))
+        changed = False
+        for alert in alerts:
+            if alert.get("id") == "gmail_token_invalid" and not alert.get("read"):
+                alert["read"] = True
+                alert["resolvedAt"] = datetime.now(timezone.utc).isoformat()
+                changed = True
+        if changed:
+            ALERTS_FILE.write_text(
+                json.dumps(alerts, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+    except Exception as e:
+        log.warning(f"Could not clear Gmail token alert: {e}")
+
+
 # ── Token cache bootstrap ──────────────────────────────────────────────────
 def _bootstrap_token_cache() -> None:
     """
@@ -309,11 +366,23 @@ async def _agent_loop() -> None:
             log.info("Agent: checking inbox...")
             await asyncio.get_event_loop().run_in_executor(None, check_inbox)
         except FileNotFoundError:
-            log.warning("Agent: token_cache.json not found. Set TOKEN_CACHE_JSON in Railway.")
+            detail = (
+                "Gmail token file is missing. Re-run agent/auth.py locally, "
+                "copy agent/token_google.json into TOKEN_GOOGLE_JSON in Railway, "
+                "then redeploy."
+            )
+            log.warning(detail)
+            _write_gmail_token_alert(detail)
         except ImportError as e:
             log.warning(f"Agent import error: {e}")
         except Exception as e:
             log.error(f"Agent error: {e}", exc_info=True)
+            if "invalid_grant" in str(e):
+                _write_gmail_token_alert(
+                    "Gmail token expired or was revoked during background "
+                    "polling. Re-run agent/auth.py locally, update "
+                    "TOKEN_GOOGLE_JSON in Railway, then redeploy."
+                )
         await asyncio.sleep(POLL_INTERVAL)
 
 # ── Login page HTML ────────────────────────────────────────────────────────
@@ -562,19 +631,26 @@ async def api_send(request: Request):
                 "threadId": result.get("threadId") if result else None,
                 "messageId": result.get("id") if result else None}
     except FileNotFoundError:
+        detail = (
+            "Gmail not connected. Re-run agent/auth.py locally, update "
+            "TOKEN_GOOGLE_JSON in Railway, then redeploy."
+        )
+        _write_gmail_token_alert(detail)
         raise HTTPException(
             status_code=503,
-            detail="Gmail not connected. Run agent/auth.py and set TOKEN_GOOGLE_JSON in Railway."
+            detail=detail,
         )
     except Exception as e:
         log.error(f"Gmail send error: {e}", exc_info=True)
         if "invalid_grant" in str(e):
+            detail = (
+                "Gmail token expired or revoked. Re-run agent/auth.py "
+                "and update TOKEN_GOOGLE_JSON in Railway."
+            )
+            _write_gmail_token_alert(detail)
             raise HTTPException(
                 status_code=503,
-                detail=(
-                    "Gmail token expired or revoked. Re-run agent/auth.py "
-                    "and update TOKEN_GOOGLE_JSON in Railway."
-                ),
+                detail=detail,
             )
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -594,6 +670,7 @@ async def gmail_status(request: Request):
         graph = GraphClient()
         connected_email = graph.get_profile_email()
         configured_sender = os.environ.get("SENDER_EMAIL", "")
+        _clear_gmail_token_alert()
         return {
             "ok": True,
             "connectedEmail": connected_email,
@@ -604,27 +681,25 @@ async def gmail_status(request: Request):
             ),
         }
     except FileNotFoundError:
+        detail = (
+            "Gmail not connected. Re-run agent/auth.py locally, update "
+            "TOKEN_GOOGLE_JSON in Railway, then redeploy."
+        )
+        _write_gmail_token_alert(detail)
         return JSONResponse(
-            {
-                "ok": False,
-                "detail": (
-                    "Gmail not connected. Run agent/auth.py and set "
-                    "TOKEN_GOOGLE_JSON in Railway."
-                ),
-            },
+            {"ok": False, "detail": detail},
             status_code=503,
         )
     except Exception as e:
         log.error(f"Gmail status error: {e}", exc_info=True)
         if "invalid_grant" in str(e):
+            detail = (
+                "Gmail token expired or revoked. Re-run agent/auth.py "
+                "and update TOKEN_GOOGLE_JSON in Railway."
+            )
+            _write_gmail_token_alert(detail)
             return JSONResponse(
-                {
-                    "ok": False,
-                    "detail": (
-                        "Gmail token expired or revoked. Re-run agent/auth.py "
-                        "and update TOKEN_GOOGLE_JSON in Railway."
-                    ),
-                },
+                {"ok": False, "detail": detail},
                 status_code=503,
             )
         return JSONResponse({"ok": False, "detail": str(e)}, status_code=500)
