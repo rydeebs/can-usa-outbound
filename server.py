@@ -330,6 +330,25 @@ def _clear_gmail_token_alert() -> None:
         log.warning(f"Could not clear Gmail token alert: {e}")
 
 
+def _send_error_detail(exc: Exception) -> str:
+    """Extracts a concise, user-facing Gmail send error."""
+    try:
+        from googleapiclient.errors import HttpError  # type: ignore
+        if isinstance(exc, HttpError):
+            status = getattr(exc, "status_code", None) or getattr(exc.resp, "status", "")
+            raw = exc.content.decode("utf-8", errors="replace") if exc.content else ""
+            message = raw
+            try:
+                parsed = json.loads(raw)
+                message = parsed.get("error", {}).get("message") or raw
+            except Exception:
+                pass
+            return f"Gmail API {status}: {message}".strip()
+    except Exception:
+        pass
+    return str(exc)
+
+
 # ── Token cache bootstrap ──────────────────────────────────────────────────
 def _bootstrap_token_cache() -> None:
     """
@@ -642,7 +661,8 @@ async def api_send(request: Request):
         )
     except Exception as e:
         log.error(f"Gmail send error: {e}", exc_info=True)
-        if "invalid_grant" in str(e):
+        detail = _send_error_detail(e)
+        if "invalid_grant" in detail:
             detail = (
                 "Gmail token expired or revoked. Re-run agent/auth.py "
                 "and update TOKEN_GOOGLE_JSON in Railway."
@@ -652,7 +672,7 @@ async def api_send(request: Request):
                 status_code=503,
                 detail=detail,
             )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=detail)
 
 
 @app.get("/api/gmail/status")

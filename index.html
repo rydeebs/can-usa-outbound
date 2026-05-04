@@ -1555,7 +1555,7 @@ async function doSend(){
         html:htmlContent,
         htmlSignature:userSignature,
         contactId:String(c.id),
-        threadId:c.gmailThreadId||null,
+        threadId:null,
       })
     });
     if(!r.ok){
@@ -1598,7 +1598,7 @@ async function sendContactNow(c){
       html:htmlContent,
       htmlSignature:userSignature,
       contactId:String(c.id),
-      threadId:c.gmailThreadId||null,
+      threadId:null,
     })
   });
   if(!r.ok){
