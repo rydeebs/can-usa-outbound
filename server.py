@@ -260,6 +260,41 @@ def _mark_bounced_contacts_from_log(limit: int = 500) -> int:
         write_state(state)
     return changed
 
+
+def _mark_bounced_contacts_by_email(
+    bounced_emails: set[str],
+    reason: str = "Address not found",
+) -> int:
+    """Marks contacts bounced by email address."""
+    if not bounced_emails:
+        return 0
+    normalized = {e.lower().strip() for e in bounced_emails if e}
+    state = read_state()
+    contacts = state.get("contacts", [])
+    now = datetime.now(timezone.utc).isoformat()
+    changed = 0
+    for i, contact in enumerate(contacts):
+        email = (contact.get("workEmail") or "").lower().strip()
+        if email not in normalized:
+            continue
+        updates = {
+            "bounced": True,
+            "bounceReason": reason,
+            "bouncedAt": contact.get("bouncedAt") or now,
+            "emailSent": True,
+            "paused": True,
+            "approved": False,
+            "opened": False,
+            "replied": False,
+        }
+        if any(contact.get(k) != v for k, v in updates.items()):
+            contacts[i] = {**contact, **updates}
+            changed += 1
+    if changed:
+        state["contacts"] = contacts
+        write_state(state)
+    return changed
+
 # ── Tracking ──────────────────────────────────────────────────────────────
 
 # 1x1 transparent GIF — the pixel itself
@@ -877,6 +912,48 @@ async def reconcile_bounces(request: Request):
         raise HTTPException(status_code=401)
     changed = _mark_bounced_contacts_from_log()
     return {"ok": True, "updated": changed}
+
+
+@app.post("/api/bounces/scan-gmail")
+async def scan_gmail_bounces(request: Request):
+    """Scans Gmail mailer-daemon messages and marks address-not-found contacts."""
+    if not is_authenticated(request):
+        raise HTTPException(status_code=401)
+    try:
+        import sys
+        agent_dir = str(ROOT / "agent")
+        if agent_dir not in sys.path:
+            sys.path.insert(0, agent_dir)
+        from graph_client import GraphClient  # type: ignore
+        from bouncer import extract_bounced_email, is_bounce_message  # type: ignore
+
+        graph = GraphClient()
+        query = (
+            'from:mailer-daemon@googlemail.com '
+            '("Address not found" OR "wasn\'t delivered" OR "Delivery Status Notification") '
+            "newer_than:365d"
+        )
+        messages = graph.search_messages(query, max_results=500)
+        bounced_emails: set[str] = set()
+        for message in messages:
+            if not is_bounce_message(message):
+                continue
+            bounced_email = extract_bounced_email(message.get("body", ""))
+            if bounced_email:
+                bounced_emails.add(bounced_email)
+        updated = _mark_bounced_contacts_by_email(
+            bounced_emails,
+            "Address not found from mailer-daemon@googlemail.com",
+        )
+        return {
+            "ok": True,
+            "scanned": len(messages),
+            "bounces": len(bounced_emails),
+            "updated": updated,
+        }
+    except Exception as e:
+        log.error(f"Gmail bounce scan error: {e}", exc_info=True)
+        return JSONResponse({"ok": False, "detail": str(e)}, status_code=500)
 
 # ── Alerts ────────────────────────────────────────────────────────────────
 

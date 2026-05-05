@@ -2873,13 +2873,21 @@ function exportCSV(){
 }
 async function syncBounces(){
   try{
+    toast('Scanning Gmail bounces...','blue');
+    const scan=await fetch('/api/bounces/scan-gmail',{method:'POST'});
+    const scanData=await scan.json().catch(()=>({}));
+    if(!scan.ok)throw new Error(scanData.detail||'Gmail bounce scan failed');
     const r=await fetch('/api/bounces/reconcile',{method:'POST'});
     const data=await r.json().catch(()=>({}));
-    if(!r.ok)throw new Error(data.detail||'Bounce sync failed');
+    if(!r.ok)throw new Error(data.detail||'Bounce reconciliation failed');
     await load();
     renderDashboard();
     updateGlobals();
-    toast('Synced '+(data.updated||0)+' bounced contact'+((data.updated||0)===1?'':'s'),'green');
+    const updated=(scanData.updated||0)+(data.updated||0);
+    toast(
+      'Scanned '+(scanData.scanned||0)+' Gmail bounces; marked '+updated+' contact'+(updated===1?'':'s'),
+      'green'
+    );
   }catch(e){
     toast(e.message||'Bounce sync failed','amber');
   }

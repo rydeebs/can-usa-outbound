@@ -234,6 +234,37 @@ class GraphClient:
         log.info(f"Fetched {len(replies)} unread messages from Gmail")
         return replies
 
+    def search_messages(self, query: str, max_results: int = 500) -> list[dict]:
+        """Searches Gmail messages and returns parsed message dicts."""
+        messages = []
+        page_token = None
+        while len(messages) < max_results:
+            result = self._service.users().messages().list(
+                userId="me",
+                q=query,
+                maxResults=min(100, max_results - len(messages)),
+                pageToken=page_token,
+            ).execute()
+            stubs = result.get("messages", [])
+            if not stubs:
+                break
+            for msg_stub in stubs:
+                try:
+                    msg = self._service.users().messages().get(
+                        userId="me",
+                        id=msg_stub["id"],
+                        format="full",
+                    ).execute()
+                    parsed = self._parse_message(msg)
+                    if parsed:
+                        messages.append(parsed)
+                except Exception as e:
+                    log.warning(f"Failed to fetch message {msg_stub['id']}: {e}")
+            page_token = result.get("nextPageToken")
+            if not page_token:
+                break
+        return messages
+
     def _parse_message(self, msg: dict) -> Optional[dict]:
         headers = {
             h["name"].lower(): h["value"]
