@@ -949,6 +949,7 @@ let tbEditId=null, tbSelectedFirms=new Set();
 let selectedQueueId=null, selectedQueueEmail='', currentMode='orig', refinedBody='', activeBody='';
 let selectedSeqEditorId=null;
 let seqCurrentTab='active';
+let _bounceSyncInFlight=false;
 
 
 function defaultSig(){return '';}
@@ -1207,7 +1208,7 @@ function showView(v){
   document.getElementById('view-'+v).classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(el=>el.classList.remove('active'));
   document.getElementById('nav-'+v).classList.add('active');
-  if(v==='dashboard')renderDashboard();
+  if(v==='dashboard'){renderDashboard();ensureFreshBounceStats();}
   if(v==='contacts')renderContacts();
   if(v==='queue'){
     queueTab='bulk';
@@ -2903,6 +2904,18 @@ async function syncBounces(){
     );
   }catch(e){
     toast(e.message||'Bounce sync failed','amber');
+  }
+}
+async function ensureFreshBounceStats(){
+  if(_bounceSyncInFlight)return;
+  const last=bounceStats&&bounceStats.lastScanAt?new Date(bounceStats.lastScanAt).getTime():0;
+  const stale=!last||(Date.now()-last)>6*60*60*1000;
+  if(!stale)return;
+  _bounceSyncInFlight=true;
+  try{
+    await syncBounces();
+  }finally{
+    _bounceSyncInFlight=false;
   }
 }
 // ── RICH TEXT SIGNATURE EDITOR ──────────────────────────────────
