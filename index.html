@@ -1221,21 +1221,28 @@ function linkedinOutreachPatch(data){
     linkedinOutreachAt:new Date().toISOString()
   };
 }
+function isLinkedInInviteStatus(status){
+  return [
+    'linkedin_invitation_sent',
+    'linkedin_invitation_pending',
+    'linkedin_already_connected'
+  ].includes(status);
+}
 function linkedInCell(c, pad='3px 9px'){
   if(!c.emailSent)return '<span style="font-size:11px;color:var(--dim)">—</span>';
-  if(c.linkedinConnected)return '<span class="li-badge li-done">Connected</span>';
-  if(c.linkedinOutreachStatus)return `<span class="li-badge li-queued">${linkedInStatusLabel(c.linkedinOutreachStatus)}</span>`;
+  if(c.linkedinConnected&&isLinkedInInviteStatus(c.linkedinOutreachStatus))return '<span class="li-badge li-done">Connected</span>';
+  if(isLinkedInInviteStatus(c.linkedinOutreachStatus))return `<span class="li-badge li-queued">${linkedInStatusLabel(c.linkedinOutreachStatus)}</span>`;
   return `<button class="btn" style="font-size:11px;padding:${pad};background:rgba(10,102,194,0.12);color:#5B9BD5;border-color:rgba(10,102,194,0.25)" data-email="${attrEsc(c.workEmail||'')}" onclick="promptLinkedIn(this.dataset.email)">Connect</button>`;
 }
 function linkedInStatusLabel(status){
   if(status==='linkedin_invitation_sent'||status==='linkedin_connection')return 'Invite sent';
   if(status==='linkedin_invitation_pending')return 'Invite pending';
   if(status==='linkedin_already_connected')return 'Connected';
-  return 'MCP sent';
+  return 'Needs retry';
 }
 function isPendingLinkedInRequest(c){
   if(!c||isAddressNotFound(c))return false;
-  if(c.replied||c.linkedinConnected||c.linkedinOutreachStatus)return false;
+  if(c.replied||isLinkedInInviteStatus(c.linkedinOutreachStatus))return false;
   if(!(c.linkedinUrl||'').trim())return false;
   return !!(c.opened||c.emailSent);
 }
@@ -3371,7 +3378,7 @@ let _liContactId=null;
 
 function promptLinkedIn(contactId){
   const c=getC(contactId);if(!c)return;
-  if(c.linkedinConnected||c.linkedinOutreachStatus)return;
+  if(isLinkedInInviteStatus(c.linkedinOutreachStatus))return;
   _liContactId=contactId;
   const hasUrl=!!(c.linkedinUrl&&c.linkedinUrl.trim());
   document.getElementById('li-modal-title').textContent=
@@ -3438,7 +3445,7 @@ async function sendLinkedInViaMcp(){
 function markLinkedInDone(){
   if(_liContactId){
     const c=getC(_liContactId);
-    updateC(c?.workEmail||_liContactId,{linkedinConnected:true,linkedinOutreachStatus:null});
+    updateC(c?.workEmail||_liContactId,{linkedinConnected:true,linkedinOutreachStatus:'linkedin_already_connected'});
     toast(`LinkedIn connection sent to ${getC(_liContactId)?.firstName||'contact'}`,'green');
   }
   _liContactId=null;
@@ -3453,7 +3460,7 @@ function skipLinkedIn(){
 
 // Show pending LinkedIn connections count in dashboard
 function getLinkedInPending(){
-  return contacts.filter(c=>c.emailSent&&!c.linkedinConnected&&!c.linkedinOutreachStatus).length;
+  return contacts.filter(c=>c.emailSent&&!isLinkedInInviteStatus(c.linkedinOutreachStatus)).length;
 }
 
 // ══════════════════════════════════════════════════════════════════

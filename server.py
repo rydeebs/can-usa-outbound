@@ -223,7 +223,7 @@ def _queue_linkedin_after_initial_email(contact_id: str | int) -> dict | None:
         return None
     if contact.get("emailSent"):
         return None
-    if contact.get("linkedinConnected") or contact.get("linkedinOutreachStatus"):
+    if _has_linkedin_invite_status(contact):
         return None
     if not (contact.get("linkedinUrl") or "").strip():
         return {"ok": False, "skipped": True, "reason": "missing_linkedin_url"}
@@ -259,6 +259,14 @@ def _queue_linkedin_after_initial_email(contact_id: str | int) -> dict | None:
     except Exception as e:
         log.warning("LinkedIn MCP auto-connect failed for contact %s: %s", contact_id, e)
         return {"ok": False, "error": str(e)}
+
+
+def _has_linkedin_invite_status(contact: dict) -> bool:
+    return contact.get("linkedinOutreachStatus") in {
+        "linkedin_invitation_sent",
+        "linkedin_invitation_pending",
+        "linkedin_already_connected",
+    }
 
 
 def _bounce_reason_text(contact: dict) -> str:

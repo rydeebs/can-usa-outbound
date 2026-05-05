@@ -72,6 +72,10 @@ class LinkedInMCPClient:
         Pushes a contact to the MCP server and, when a LinkedIn invite tool is
         exposed, asks the MCP server to send/queue the connection note.
         """
+        execute_tool = next((t for t in self._list_tools() if t.get("name") == "execute-request"), None)
+        if execute_tool and self.api_base_url:
+            return self._send_unipile_invite(contact, message, execute_tool["name"])
+
         contact_result = self.upsert_contact(contact, required=False)
         linkedin_tool = self._find_tool(
             env_name="LINKEDIN_MCP_CONNECT_TOOL",
@@ -102,10 +106,6 @@ class LinkedInMCPClient:
             )
             response = self._call_tool(list_tool["name"], args)
             return LinkedInMCPResult(True, "mcp_list", list_tool["name"], response)
-
-        execute_tool = next((t for t in self._list_tools() if t.get("name") == "execute-request"), None)
-        if execute_tool:
-            return self._send_unipile_invite(contact, message, execute_tool["name"])
 
         if not contact_result:
             raise LinkedInMCPError(
@@ -319,6 +319,8 @@ class LinkedInMCPClient:
             raise LinkedInMCPError(f"{env_name}={override!r}, but that tool was not listed by LinkedIn MCP.")
 
         def score(tool: dict[str, Any]) -> int:
+            if tool.get("name") in {"list-endpoints", "get-endpoint", "search-endpoints", "get-server-variables"}:
+                return 0
             text = f"{tool.get('name', '')} {tool.get('description', '')}".lower()
             if not any(term in text for term in include_any):
                 return 0
