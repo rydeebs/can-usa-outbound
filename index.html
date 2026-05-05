@@ -1058,6 +1058,7 @@ async function load(){
     if(!r.ok)throw new Error('State load failed: '+r.status);
     const d=await r.json();
     contacts=d.contacts&&d.contacts.length?d.contacts:[];
+    warnDuplicateContactIds();
     seqEmails=d.seqEmails||{};
     htmlTemplates=d.htmlTemplates||{};
     customTemplates=d.customTemplates||[];
@@ -1089,6 +1090,7 @@ function startAutoRefresh(){
       if(d.savedAt&&d.savedAt!==_lastSavedAt){
         _lastSavedAt=d.savedAt;
         contacts=d.contacts||[];
+        warnDuplicateContactIds();
         seqEmails=d.seqEmails||{};
         htmlTemplates=d.htmlTemplates||{};
         customTemplates=d.customTemplates||[];
@@ -1123,7 +1125,7 @@ function importBackup(e){
       const d=JSON.parse(ev.target.result);
       if(!d.contacts)throw new Error('Invalid backup');
       if(!confirm('Replace all current data with backup?'))return;
-      contacts=d.contacts;seqEmails=d.seqEmails||{};htmlTemplates=d.htmlTemplates||{};customTemplates=d.customTemplates||[];bounceStats=d.bounceStats||{};
+      contacts=d.contacts;warnDuplicateContactIds();seqEmails=d.seqEmails||{};htmlTemplates=d.htmlTemplates||{};customTemplates=d.customTemplates||[];bounceStats=d.bounceStats||{};
       userSignature=d.userSignature||'';
       const se=document.getElementById('sig-editor');if(se)se.innerHTML=userSignature;
       
@@ -1182,6 +1184,16 @@ function getC(id){
   const n=Number(id);
   return contacts.find(c=>Number(c.id)===n)||contacts.find(c=>String(c.id)===String(id));
 }
+function warnDuplicateContactIds(){
+  const seen=new Map(),dupes=[];
+  contacts.forEach(c=>{
+    const key=String(c.id||'');
+    if(!key)return;
+    if(seen.has(key))dupes.push([key,seen.get(key),c]);
+    else seen.set(key,c);
+  });
+  if(dupes.length)console.warn('Duplicate contact ids detected; email keys are used for LinkedIn actions.',dupes);
+}
 function updateC(id,ch){
   if(typeof id==='string'&&id.includes('@')){
     contacts=contacts.map(c=>(c.workEmail||'').toLowerCase()===id.toLowerCase()?{...c,...ch}:c);
@@ -1213,7 +1225,7 @@ function linkedInCell(c, pad='3px 9px'){
   if(!c.emailSent)return '<span style="font-size:11px;color:var(--dim)">—</span>';
   if(c.linkedinConnected)return '<span class="li-badge li-done">Connected</span>';
   if(c.linkedinOutreachStatus)return '<span class="li-badge li-queued">MCP queued</span>';
-  return `<button class="btn" style="font-size:11px;padding:${pad};background:rgba(10,102,194,0.12);color:#5B9BD5;border-color:rgba(10,102,194,0.25)" onclick="promptLinkedIn(${c.id})">Connect</button>`;
+  return `<button class="btn" style="font-size:11px;padding:${pad};background:rgba(10,102,194,0.12);color:#5B9BD5;border-color:rgba(10,102,194,0.25)" data-email="${attrEsc(c.workEmail||'')}" onclick="promptLinkedIn(this.dataset.email)">Connect</button>`;
 }
 function isPendingLinkedInRequest(c){
   if(!c||isAddressNotFound(c))return false;
@@ -1342,7 +1354,7 @@ async function sendPendingLinkedInRequests(){
   if(btn)btn.disabled=true;
   let ok=0,failed=0,skipped=0;
   for(let i=0;i<list.length;i++){
-    const c=getC(list[i].id);
+    const c=getC(list[i].workEmail||list[i].id);
     if(!isPendingLinkedInRequest(c)){skipped++;continue;}
     if(statusEl)statusEl.textContent=`${i+1}/${list.length} ${c.firstName||''} ${c.lastName||''}`.trim();
     try{
@@ -1353,7 +1365,7 @@ async function sendPendingLinkedInRequests(){
       });
       const data=await r.json().catch(()=>({}));
       if(!r.ok)throw new Error(data.detail||'LinkedIn MCP send failed');
-      updateC(c.id,{
+      updateC(c.workEmail||c.id,{
         linkedinOutreachStatus:data.status||'queued',
         linkedinOutreachProvider:data.provider||'LinkedIn MCP',
         linkedinOutreachTool:data.tool||null,
@@ -1362,7 +1374,7 @@ async function sendPendingLinkedInRequests(){
       });
       ok++;
     }catch(e){
-      console.warn('LinkedIn MCP bulk send failed',c?.id,e);
+      console.warn('LinkedIn MCP bulk send failed',c?.workEmail||c?.id,e);
       failed++;
     }
     renderContacts();
@@ -1688,7 +1700,7 @@ async function doSend(){
   }
   const sentContact=getC(selectedQueueEmail);
   advanceQueue();
-  if(sentContact&&!sentContact.linkedinConnected&&!sentContact.linkedinOutreachStatus)promptLinkedIn(sentContact.id);
+  if(sentContact&&!sentContact.linkedinConnected&&!sentContact.linkedinOutreachStatus)promptLinkedIn(sentContact.workEmail||sentContact.id);
 }
 async function sendContactNow(c){
   const subj=(c.subjectLine||'').trim();
@@ -2754,7 +2766,7 @@ async function sendSeqStep(contactId,step){
   }
   renderSeqEditorBody(contactId);renderSeqStudio();
   const sc=getC(contactId);
-  if(sc&&!sc.linkedinConnected&&!sc.linkedinOutreachStatus)promptLinkedIn(contactId);
+  if(sc&&!sc.linkedinConnected&&!sc.linkedinOutreachStatus)promptLinkedIn(sc.workEmail||contactId);
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -3399,7 +3411,7 @@ async function sendLinkedInViaMcp(){
     });
     const data=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(data.detail||'LinkedIn MCP send failed');
-    updateC(c.id,{
+    updateC(c.workEmail||c.id,{
       linkedinOutreachStatus:data.status||'queued',
       linkedinOutreachProvider:data.provider||'LinkedIn MCP',
       linkedinOutreachTool:data.tool||null,
@@ -3419,7 +3431,8 @@ async function sendLinkedInViaMcp(){
 
 function markLinkedInDone(){
   if(_liContactId){
-    updateC(_liContactId,{linkedinConnected:true,linkedinOutreachStatus:null});
+    const c=getC(_liContactId);
+    updateC(c?.workEmail||_liContactId,{linkedinConnected:true,linkedinOutreachStatus:null});
     toast(`LinkedIn connection sent to ${getC(_liContactId)?.firstName||'contact'}`,'green');
   }
   _liContactId=null;
