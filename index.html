@@ -944,6 +944,7 @@ const TPL_SLOT_KEYS=[];
 let contacts=[], seqEmails={}, userSignature='';
 let htmlTemplates={}; // { 'T1-B': {html:'...', name:'...', uploadedAt:'...'}, ... }
 let customTemplates=[]; // [{id,name,tier,firms:[],subject,body,createdAt}]
+let bounceStats={}; // Gmail mailer-daemon scan summary for dashboard totals
 let tbEditId=null, tbSelectedFirms=new Set();
 let selectedQueueId=null, selectedQueueEmail='', currentMode='orig', refinedBody='', activeBody='';
 let selectedSeqEditorId=null;
@@ -1032,7 +1033,7 @@ function applyHtmlTemplate(templateHtml,contact,emailBody,subject){
 // LOCALSTORAGE
 // ══════════════════════════════════════════════════════════════════
 function save(){
-  const data={contacts,seqEmails,htmlTemplates,customTemplates:customTemplates||[],userSignature,savedAt:new Date().toISOString()};
+  const data={contacts,seqEmails,htmlTemplates,customTemplates:customTemplates||[],bounceStats:bounceStats||{},userSignature,savedAt:new Date().toISOString()};
   fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
     .then(r=>{if(r.status===401)window.location.href='/login';})
     .then(()=>{
@@ -1055,6 +1056,7 @@ async function load(){
     seqEmails=d.seqEmails||{};
     htmlTemplates=d.htmlTemplates||{};
     customTemplates=d.customTemplates||[];
+    bounceStats=d.bounceStats||{};
     userSignature=d.userSignature||'';
     
     _lastSavedAt=d.savedAt||null;
@@ -1069,7 +1071,7 @@ async function load(){
     }
   }catch(e){
     console.error('Load failed:',e);
-    contacts=[];userSignature='';seqEmails={};htmlTemplates={};customTemplates=[];
+    contacts=[];userSignature='';seqEmails={};htmlTemplates={};customTemplates=[];bounceStats={};
   }
 }
 
@@ -1085,6 +1087,7 @@ function startAutoRefresh(){
         seqEmails=d.seqEmails||{};
         htmlTemplates=d.htmlTemplates||{};
         customTemplates=d.customTemplates||[];
+        bounceStats=d.bounceStats||{};
         userSignature=d.userSignature||'';
         loadWriteTemplates(d);
         renderDashboard();updateGlobals();
@@ -1103,7 +1106,7 @@ async function doLogout(){
 
 function exportBackup(){
   const a=document.createElement('a');
-  a.href='data:application/json,'+encodeURIComponent(JSON.stringify({contacts,seqEmails,htmlTemplates,customTemplates,userSignature,exportedAt:new Date().toISOString()},null,2));
+  a.href='data:application/json,'+encodeURIComponent(JSON.stringify({contacts,seqEmails,htmlTemplates,customTemplates,bounceStats,userSignature,exportedAt:new Date().toISOString()},null,2));
   a.download='canusa_backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();
   toast('Backup exported','green');
 }
@@ -1115,7 +1118,7 @@ function importBackup(e){
       const d=JSON.parse(ev.target.result);
       if(!d.contacts)throw new Error('Invalid backup');
       if(!confirm('Replace all current data with backup?'))return;
-      contacts=d.contacts;seqEmails=d.seqEmails||{};htmlTemplates=d.htmlTemplates||{};customTemplates=d.customTemplates||[];
+      contacts=d.contacts;seqEmails=d.seqEmails||{};htmlTemplates=d.htmlTemplates||{};customTemplates=d.customTemplates||[];bounceStats=d.bounceStats||{};
       userSignature=d.userSignature||'';
       const se=document.getElementById('sig-editor');if(se)se.innerHTML=userSignature;
       
@@ -1126,7 +1129,7 @@ function importBackup(e){
 }
 function clearData(){
   if(!confirm('Delete all data?'))return;if(!confirm('Last chance — cannot be undone.'))return;
-  contacts=[];seqEmails={};htmlTemplates={};customTemplates=[];
+  contacts=[];seqEmails={};htmlTemplates={};customTemplates=[];bounceStats={};
   userSignature='';const se=document.getElementById('sig-editor');if(se)se.innerHTML='';
   save();renderDashboard();updateGlobals();toast('Cleared','amber');
 }
@@ -1154,6 +1157,17 @@ function isAddressNotFound(c){
     ||reason.includes('5.1.1');
 }
 function isDeliveredSent(c){return !!(c&&c.emailSent&&!isAddressNotFound(c));}
+function getCampaignMetrics(){
+  const sent=contacts.filter(c=>c.emailSent);
+  const deliveredContacts=sent.filter(c=>!isAddressNotFound(c));
+  const contactBounces=sent.filter(c=>isAddressNotFound(c)).length;
+  const gmailBounces=Number((bounceStats&&bounceStats.gmailAddressNotFound)||0);
+  const bounces=Math.max(contactBounces,gmailBounces);
+  const deliveredCount=Math.max(0,sent.length-bounces);
+  const opened=deliveredContacts.filter(c=>c.opened).length;
+  const replied=deliveredContacts.filter(c=>c.replied).length;
+  return {sent,deliveredContacts,contactBounces,gmailBounces,bounces,deliveredCount,opened,replied};
+}
 function getC(id){
   // Primary: match by email string (stored in data-email on sidebar items)
   if(typeof id==='string'&&id.includes('@'))
@@ -1213,12 +1227,13 @@ function updateGlobals(){
   const qcb=document.getElementById('q-count-btn');if(qcb)qcb.textContent=p>0?'('+p+')':'';
   const hot=contacts.filter(c=>c.wPriorSWARM>50&&!c.emailSent&&!isAddressNotFound(c)).length;
   const ha=document.getElementById('hot-alert');if(hot>0){ha.style.display='inline';ha.textContent=hot+' HOT SWARMP';}else ha.style.display='none';
+  const metrics=getCampaignMetrics();
   ['st-total','st-sent','st-opened','st-replied'].forEach((id,i)=>{
     const v=[
       contacts.filter(c=>!isAddressNotFound(c)).length,
-      contacts.filter(isDeliveredSent).length,
-      contacts.filter(c=>isDeliveredSent(c)&&c.opened).length,
-      contacts.filter(c=>isDeliveredSent(c)&&c.replied).length
+      metrics.deliveredCount,
+      metrics.opened,
+      metrics.replied
     ][i];
     const el=document.getElementById(id);if(el)el.textContent=v;
   });
@@ -2797,10 +2812,8 @@ function toggleTierExpand(t){
 }
 
 function renderDashboard(){
-  const sent=contacts.filter(c=>c.emailSent);
-  const delivered=sent.filter(c=>!isAddressNotFound(c));
-  const op=delivered.filter(c=>c.opened).length,rp=delivered.filter(c=>c.replied).length,bo=sent.filter(c=>isAddressNotFound(c)).length;
-  const deliveredCount=delivered.length;
+  const metrics=getCampaignMetrics();
+  const {opened:op,replied:rp,bounces:bo,deliveredCount}=metrics;
   document.getElementById('dash-top').innerHTML=[
     {l:'Emails sent',v:deliveredCount,c:'var(--text)',s:bo?bo+' bounced excluded':''},{l:'Open rate',v:(deliveredCount?Math.round(op/deliveredCount*100):0)+'%',c:'var(--blue)',s:'vs 6% avg'},
     {l:'Reply rate',v:(deliveredCount?Math.round(rp/deliveredCount*100):0)+'%',c:'var(--teal)',s:'vs 0.9% avg'},{l:'Bounces',v:bo,c:bo>0?'var(--red)':'var(--dim)'},
@@ -2885,7 +2898,7 @@ async function syncBounces(){
     updateGlobals();
     const updated=(scanData.updated||0)+(data.updated||0);
     toast(
-      'Scanned '+(scanData.scanned||0)+' Gmail bounces; marked '+updated+' contact'+(updated===1?'':'s'),
+      'Found '+(scanData.bounces||0)+' address-not-found bounces; marked '+updated+' contact'+(updated===1?'':'s'),
       'green'
     );
   }catch(e){

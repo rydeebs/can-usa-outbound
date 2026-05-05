@@ -96,6 +96,7 @@ DEFAULT_STATE: dict = {
     "seqEmails": {},
     "htmlTemplates": {},
     "customTemplates": [],
+    "bounceStats": {},
     "userSignature": "",
     "azureClientId": "",
     "savedAt": None,
@@ -294,6 +295,29 @@ def _mark_bounced_contacts_by_email(
         state["contacts"] = contacts
         write_state(state)
     return changed
+
+
+def _store_bounce_stats(
+    *,
+    scanned: int,
+    gmail_address_not_found: int,
+    matched_contacts: int,
+    bounced_emails: set[str],
+) -> None:
+    """Persists Gmail bounce scan totals for dashboard metrics."""
+    state = read_state()
+    scanned_at = datetime.now(timezone.utc).isoformat()
+    state["bounceStats"] = {
+        **(state.get("bounceStats") or {}),
+        "scanned": scanned,
+        "gmailAddressNotFound": gmail_address_not_found,
+        "matchedContacts": matched_contacts,
+        "lastScanAt": scanned_at,
+        "source": "gmail-mailer-daemon",
+        "sampleEmails": sorted(bounced_emails)[:25],
+    }
+    state["savedAt"] = scanned_at
+    write_state(state)
 
 # ── Tracking ──────────────────────────────────────────────────────────────
 
@@ -684,6 +708,10 @@ async def post_state(request: Request):
     try: body = await request.json()
     except Exception: raise HTTPException(status_code=400, detail="Invalid JSON")
     if not isinstance(body, dict): raise HTTPException(status_code=400)
+    if "bounceStats" not in body:
+        existing = read_state()
+        if existing.get("bounceStats"):
+            body["bounceStats"] = existing["bounceStats"]
     write_state(body)
     return {"ok": True, "savedAt": body.get("savedAt")}
 
@@ -944,6 +972,12 @@ async def scan_gmail_bounces(request: Request):
         updated = _mark_bounced_contacts_by_email(
             bounced_emails,
             "Address not found from mailer-daemon@googlemail.com",
+        )
+        _store_bounce_stats(
+            scanned=len(messages),
+            gmail_address_not_found=len(bounced_emails),
+            matched_contacts=updated,
+            bounced_emails=bounced_emails,
         )
         return {
             "ok": True,
