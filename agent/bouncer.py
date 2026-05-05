@@ -57,8 +57,15 @@ BOUNCE_SUBJECTS = [
 BOUNCE_EMAIL_PATTERNS = [
     # "Your message wasn't delivered to email@domain.com because"
     r"wasn't delivered to\s+([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})",
+    # Google often renders: "Address not found. Your message wasn't delivered to x because..."
+    r"Address not found.*?(?:delivered to|recipient|address)?\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})",
+    # Delivery report blocks.
+    r"X-Failed-Recipients:\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})",
     # "The email account that you tried to reach does not exist. email@domain.com"
     r"does not exist.*?([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})",
+    # "550 5.1.1 ... user unknown / address not found ..."
+    r"5\.1\.1.*?([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})",
+    r"user unknown.*?([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})",
     # "Final-Recipient: rfc822; email@domain.com"
     r"Final-Recipient:.*?([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})",
     # "Original-Recipient: rfc822; email@domain.com"
@@ -251,8 +258,11 @@ def handle_bounce(
                     "bounced": True,
                     "bounceReason": "Address not found",
                     "bouncedAt": datetime.now(timezone.utc).isoformat(),
-                    # Keep this counted in sent metrics even if data was inconsistent
+                    # Bounces are attempted sends, but not delivered sends.
+                    # Dashboard/reporting excludes them from sent/open/reply metrics.
                     "emailSent": True if c.get("emailSent") is not True else c.get("emailSent"),
+                    "opened": False,
+                    "replied": False,
                     # Prevent any further sequence sends
                     "paused": True,
                     "approved": False,

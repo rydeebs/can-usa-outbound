@@ -178,6 +178,88 @@ def write_state(state: dict) -> None:
     else:
         _write_file(state)
 
+
+def _bounce_reason_text(contact: dict) -> str:
+    return (
+        f"{contact.get('bounceReason', '')} "
+        f"{contact.get('lastBounceReason', '')} "
+        f"{contact.get('bounce_reason', '')}"
+    ).lower()
+
+
+def _is_address_not_found_contact(contact: dict) -> bool:
+    if contact.get("bounced") in (True, "true", 1, "1"):
+        return True
+    reason = _bounce_reason_text(contact)
+    return any(
+        term in reason
+        for term in (
+            "address not found",
+            "hard bounce",
+            "undeliverable",
+            "does not exist",
+            "user unknown",
+            "5.1.1",
+        )
+    )
+
+
+def _mark_bounced_contacts_from_log(limit: int = 500) -> int:
+    """Reconciles contacts against the persisted bounced_contacts table."""
+    if not DATABASE_URL:
+        return 0
+    try:
+        import psycopg2.extras
+        conn = _get_conn()
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT DISTINCT ON (LOWER(email))
+                       LOWER(email) AS email, bounced_at, bounce_reason
+                FROM bounced_contacts
+                WHERE email IS NOT NULL AND email <> ''
+                ORDER BY LOWER(email), bounced_at DESC
+                LIMIT %s
+            """, (limit,))
+            rows = cur.fetchall()
+        conn.close()
+    except Exception as e:
+        log.warning(f"Could not fetch bounce log for reconciliation: {e}")
+        return 0
+
+    bounce_by_email = {r["email"]: r for r in rows if r.get("email")}
+    if not bounce_by_email:
+        return 0
+
+    state = read_state()
+    contacts = state.get("contacts", [])
+    changed = 0
+    for i, contact in enumerate(contacts):
+        email = (contact.get("workEmail") or "").lower()
+        row = bounce_by_email.get(email)
+        if not row:
+            continue
+        updates = {
+            "bounced": True,
+            "bounceReason": row.get("bounce_reason") or "Address not found",
+            "bouncedAt": (
+                row["bounced_at"].isoformat()
+                if hasattr(row.get("bounced_at"), "isoformat")
+                else row.get("bounced_at")
+            ),
+            "paused": True,
+            "approved": False,
+            "opened": False,
+            "replied": False,
+        }
+        if any(contact.get(k) != v for k, v in updates.items()):
+            contacts[i] = {**contact, **updates}
+            changed += 1
+
+    if changed:
+        state["contacts"] = contacts
+        write_state(state)
+    return changed
+
 # ── Tracking ──────────────────────────────────────────────────────────────
 
 # 1x1 transparent GIF — the pixel itself
@@ -786,6 +868,15 @@ async def get_bounces(request: Request):
     except Exception as e:
         log.error(f"Bounces fetch error: {e}")
         return JSONResponse({"bounces": [], "total": 0})
+
+
+@app.post("/api/bounces/reconcile")
+async def reconcile_bounces(request: Request):
+    """Marks contacts bounced if they appear in the persisted bounce log."""
+    if not is_authenticated(request):
+        raise HTTPException(status_code=401)
+    changed = _mark_bounced_contacts_from_log()
+    return {"ok": True, "updated": changed}
 
 # ── Alerts ────────────────────────────────────────────────────────────────
 

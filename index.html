@@ -301,7 +301,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
 
 <!-- ═══ DASHBOARD ═══ -->
 <div id="view-dashboard" class="view active">
-  <div class="topbar"><span class="topbar-title" style="flex:1">Campaign dashboard</span><button class="btn" onclick="exportCSV()">Export CSV</button></div>
+  <div class="topbar"><span class="topbar-title" style="flex:1">Campaign dashboard</span><button class="btn" onclick="syncBounces()">Sync bounces</button><button class="btn" onclick="exportCSV()">Export CSV</button></div>
   <div class="scroll" style="padding:16px">
     <div class="dash-grid" id="dash-top"></div>
     <div class="card" style="margin-bottom:14px;overflow:hidden">
@@ -1145,8 +1145,13 @@ function attrEsc(s){return esc(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function isAddressNotFound(c){
   if(!c)return false;
   if(c.bounced===true||c.bounced==='true'||c.bounced===1||c.bounced==='1')return true;
-  const reason=((c.bounceReason||'')+' '+(c.lastBounceReason||'')).toLowerCase();
-  return reason.includes('address not found')||reason.includes('hard bounce')||reason.includes('undeliverable');
+  const reason=((c.bounceReason||'')+' '+(c.lastBounceReason||'')+' '+(c.bounce_reason||'')).toLowerCase();
+  return reason.includes('address not found')
+    ||reason.includes('hard bounce')
+    ||reason.includes('undeliverable')
+    ||reason.includes('does not exist')
+    ||reason.includes('user unknown')
+    ||reason.includes('5.1.1');
 }
 function isDeliveredSent(c){return !!(c&&c.emailSent&&!isAddressNotFound(c));}
 function getC(id){
@@ -2865,6 +2870,19 @@ function renderDashboard(){
 function exportCSV(){
   const rows=contacts.map(c=>[c.firstName,c.lastName,c.firmName,c.tier,c.totalUnfiled,c.workEmail,isDeliveredSent(c)?'Yes':'No',(isDeliveredSent(c)&&c.opened)?'Yes':'No',(isDeliveredSent(c)&&c.replied)?'Yes':'No',isAddressNotFound(c)?'Yes':'No'].join(','));
   const a=document.createElement('a');a.href='data:text/csv,'+encodeURIComponent('First,Last,Firm,Tier,Unfiled,Email,Sent,Opened,Replied,AddressNotFound\n'+rows.join('\n'));a.download='canusa_campaign.csv';a.click();
+}
+async function syncBounces(){
+  try{
+    const r=await fetch('/api/bounces/reconcile',{method:'POST'});
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(data.detail||'Bounce sync failed');
+    await load();
+    renderDashboard();
+    updateGlobals();
+    toast('Synced '+(data.updated||0)+' bounced contact'+((data.updated||0)===1?'':'s'),'green');
+  }catch(e){
+    toast(e.message||'Bounce sync failed','amber');
+  }
 }
 // ── RICH TEXT SIGNATURE EDITOR ──────────────────────────────────
 function updateSignature(){
