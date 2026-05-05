@@ -180,6 +180,87 @@ def write_state(state: dict) -> None:
         _write_file(state)
 
 
+def _find_contact_by_id(state: dict, contact_id: str | int) -> tuple[int, dict] | tuple[None, None]:
+    needle = str(contact_id)
+    for i, contact in enumerate(state.get("contacts", [])):
+        if str(contact.get("id")) == needle:
+            return i, contact
+    return None, None
+
+
+def _linkedin_connection_note(contact: dict) -> str:
+    first = (contact.get("firstName") or "").strip() or "there"
+    firm = (contact.get("firmName") or "your team").strip()
+    sub10a = int(contact.get("sub10A") or 0)
+    if sub10a > 0:
+        note = (
+            f"Hi {first}, Pawel at CAN USA. I sent a quick note about {firm}'s "
+            f"{sub10a} 10A FISP filings. Thought it made sense to connect here too."
+        )
+    else:
+        note = (
+            f"Hi {first}, Pawel at CAN USA. I sent a quick note about FISP/Local "
+            f"Law 11 support for {firm}. Thought it made sense to connect here too."
+        )
+    return note[:290]
+
+
+def _queue_linkedin_after_initial_email(contact_id: str | int) -> dict | None:
+    """
+    Best-effort LinkedIn MCP enqueue after the first email send.
+
+    This should never block or fail the email send. It only runs for contacts
+    that have not already been emailed and are not already connected/queued.
+    """
+    if os.environ.get("LINKEDIN_MCP_AUTO_CONNECT", "true").lower() not in ("1", "true", "yes", "on"):
+        return None
+    if not os.environ.get("LINKEDIN_MCP_SERVER_URL"):
+        return None
+
+    state = read_state()
+    idx, contact = _find_contact_by_id(state, contact_id)
+    if contact is None or idx is None:
+        return None
+    if contact.get("emailSent"):
+        return None
+    if contact.get("linkedinConnected") or contact.get("linkedinOutreachStatus"):
+        return None
+    if not (contact.get("linkedinUrl") or "").strip():
+        return {"ok": False, "skipped": True, "reason": "missing_linkedin_url"}
+
+    try:
+        import sys
+        agent_dir = str(ROOT / "agent")
+        if agent_dir not in sys.path:
+            sys.path.insert(0, agent_dir)
+        from linkedin_mcp_client import LinkedInMCPClient  # type: ignore
+
+        message = _linkedin_connection_note(contact)
+        result = LinkedInMCPClient().queue_linkedin_outreach(contact, message)
+        updated = {
+            **contact,
+            "linkedinOutreachStatus": result.action,
+            "linkedinOutreachProvider": "LinkedIn MCP",
+            "linkedinOutreachTool": result.tool,
+            "linkedinOutreachAt": datetime.now(timezone.utc).isoformat(),
+            "linkedinOutreachMessage": message,
+        }
+        contacts = state.get("contacts", [])
+        contacts[idx] = updated
+        state["contacts"] = contacts
+        write_state(state)
+        return {
+            "ok": True,
+            "status": result.action,
+            "provider": "LinkedIn MCP",
+            "tool": result.tool,
+            "message": message,
+        }
+    except Exception as e:
+        log.warning("LinkedIn MCP auto-connect failed for contact %s: %s", contact_id, e)
+        return {"ok": False, "error": str(e)}
+
+
 def _bounce_reason_text(contact: dict) -> str:
     return (
         f"{contact.get('bounceReason', '')} "
@@ -830,10 +911,16 @@ async def api_send(request: Request):
             result = graph.send_email(to=to, subject=subject, body=text,
                                 html=full_html, thread_id=thread_id)
 
+        linkedin_outreach = None
+        contact_id_str = str(contact_id)
+        if not thread_id and contact_id_str and contact_id_str != to:
+            linkedin_outreach = _queue_linkedin_after_initial_email(contact_id_str)
+
         log.info(f"Sent via Gmail API: {to} — {subject!r}")
         return {"ok": True, "token": token,
                 "threadId": result.get("threadId") if result else None,
-                "messageId": result.get("id") if result else None}
+                "messageId": result.get("id") if result else None,
+                "linkedinOutreach": linkedin_outreach}
     except FileNotFoundError:
         detail = (
             "Gmail not connected. Re-run agent/auth.py locally, update "
@@ -858,6 +945,87 @@ async def api_send(request: Request):
                 detail=detail,
             )
         raise HTTPException(status_code=500, detail=detail)
+
+
+# ── LinkedIn MCP outreach ─────────────────────────────────────────────────
+
+@app.get("/api/linkedin/status")
+async def linkedin_status(request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(status_code=401)
+    return {
+        "configured": bool(os.environ.get("LINKEDIN_MCP_SERVER_URL")),
+        "provider": "LinkedIn MCP",
+        "listName": os.environ.get("LINKEDIN_MCP_LIST_NAME", "CAN USA LinkedIn Outreach"),
+        "campaignName": os.environ.get("LINKEDIN_MCP_CAMPAIGN_NAME", "CAN USA LinkedIn Outreach"),
+    }
+
+
+@app.post("/api/linkedin/connect")
+async def linkedin_connect(request: Request):
+    """
+    Sends or queues a LinkedIn connection request through the configured MCP.
+
+    The MCP server owns LinkedIn account auth, rate limits, and execution. We
+    only pass the selected contact and a short CAN USA note.
+    """
+    if not is_authenticated(request):
+        raise HTTPException(status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    contact_id = body.get("contactId")
+    if not contact_id:
+        raise HTTPException(status_code=400, detail="contactId is required")
+
+    state = read_state()
+    idx, contact = _find_contact_by_id(state, contact_id)
+    if contact is None or idx is None:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    if not contact.get("linkedinUrl"):
+        raise HTTPException(status_code=400, detail="Add a LinkedIn URL before sending via LinkedIn MCP.")
+
+    message = (body.get("message") or "").strip() or _linkedin_connection_note(contact)
+
+    try:
+        import sys
+        agent_dir = str(ROOT / "agent")
+        if agent_dir not in sys.path:
+            sys.path.insert(0, agent_dir)
+        from linkedin_mcp_client import LinkedInMCPClient, LinkedInMCPNotConfigured, LinkedInMCPError  # type: ignore
+
+        result = LinkedInMCPClient().queue_linkedin_outreach(contact, message)
+    except LinkedInMCPNotConfigured as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except LinkedInMCPError as e:
+        log.error("LinkedIn MCP error: %s", e)
+        raise HTTPException(status_code=502, detail=f"LinkedIn MCP error: {str(e)}")
+    except Exception as e:
+        log.error("LinkedIn MCP outreach error: %s", e, exc_info=True)
+        raise HTTPException(status_code=502, detail=f"LinkedIn outreach failed: {str(e)}")
+
+    contacts = state.get("contacts", [])
+    contacts[idx] = {
+        **contact,
+        "linkedinOutreachStatus": result.action,
+        "linkedinOutreachProvider": "LinkedIn MCP",
+        "linkedinOutreachTool": result.tool,
+        "linkedinOutreachAt": datetime.now(timezone.utc).isoformat(),
+        "linkedinOutreachMessage": message,
+    }
+    state["contacts"] = contacts
+    write_state(state)
+
+    return {
+        "ok": True,
+        "status": result.action,
+        "provider": "LinkedIn MCP",
+        "tool": result.tool,
+        "message": message,
+        "response": result.response,
+    }
 
 
 @app.get("/api/gmail/status")

@@ -15,6 +15,7 @@ Outbound email platform for Pawel Wojcik (Special Rigger, CAN USA) targeting NYC
 | `agent/router.py` | Step 1: classify incoming reply type |
 | `agent/responder.py` | Step 2: generate reply using SOUL.md |
 | `agent/evaluator.py` | Step 3: quality-check the draft |
+| `agent/linkedin_mcp_client.py` | Remote MCP client for LinkedIn outreach |
 | `agent/prompts/router.md` | System prompt for classification |
 | `agent/prompts/responder.md` | System prompt for response generation |
 | `agent/prompts/evaluator.md` | System prompt for quality evaluation |
@@ -106,6 +107,30 @@ The agent detects replies, generates Claude responses, and writes them to `data/
 **Auto-send mode** (`AUTO_SEND=true`) — after 30 days of review
 
 The agent sends approved categories automatically. Hard opt-outs and out-of-office replies are always handled automatically. Interested replies and objections should stay in review mode the longest.
+
+---
+
+## LinkedIn outreach through your MCP
+
+The platform can queue a LinkedIn connection request after an email is sent. It calls your configured LinkedIn MCP server instead of logging into LinkedIn directly.
+
+Your MCP server should expose tools for contact/lead creation and LinkedIn connection requests. The app can discover likely tool names automatically, or you can pin exact names with environment variables.
+
+Set these environment variables on Railway:
+
+```bash
+LINKEDIN_MCP_SERVER_URL=...
+LINKEDIN_MCP_API_KEY=...
+LINKEDIN_MCP_AUTO_CONNECT=true
+LINKEDIN_MCP_LIST_NAME="CAN USA LinkedIn Outreach"
+LINKEDIN_MCP_CAMPAIGN_NAME="CAN USA LinkedIn Outreach"
+```
+
+If your MCP exposes custom tool names, set `LINKEDIN_MCP_CONTACT_TOOL`, `LINKEDIN_MCP_CONNECT_TOOL`, or `LINKEDIN_MCP_LIST_TOOL` to the exact names. Without those overrides, the app discovers matching contact, LinkedIn invitation, and list/campaign tools automatically.
+
+The smallest useful MCP surface is one tool whose name or description includes LinkedIn plus one of: connect, connection, invite, invitation, or request. It should accept fields such as `linkedinUrl`, `firstName`, `lastName`, `companyName`, and `message`.
+
+When `LINKEDIN_MCP_AUTO_CONNECT=true`, every successful initial email send also queues the LinkedIn connection request if the contact has a LinkedIn URL and has not already been queued or marked connected.
 
 ---
 

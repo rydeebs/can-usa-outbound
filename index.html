@@ -242,7 +242,8 @@ tr:hover td{background:rgba(255,255,255,0.02)}
 .li-modal h3{font-size:15px;font-weight:600;color:var(--text);margin-bottom:8px}
 .li-modal p{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:18px}
 .li-badge{background:rgba(10,102,194,0.12);color:#5B9BD5;border:1px solid rgba(10,102,194,0.25);padding:2px 8px;border-radius:12px;font-size:11px;font-weight:500;white-space:nowrap}
-.li-done{background:var(--green-bg);color:var(--green);border-color:rgba(46,184,106,0.3)}
+.li-queued{background:var(--teal-bg);color:var(--teal);border-color:rgba(34,168,152,0.28)}
+.li-done{background:var(--green-bg);color:var(--green);border-color:rgba(46,184,106,0.28)}
 </style>
 </head>
 <body>
@@ -323,6 +324,8 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     <button class="btn" onclick="document.getElementById('csv-file').click()">Import CSV</button>
     <button class="btn btn-violet" onclick="openTB()">Template Builder</button>
     <button class="btn btn-amber" onclick="showView('queue')">Review queue <span id="q-count-btn"></span></button>
+    <button class="btn btn-teal" id="contacts-li-bulk-btn" onclick="sendPendingLinkedInRequests()">Send pending LinkedIn <span id="contacts-li-bulk-count"></span></button>
+    <span id="contacts-li-bulk-status" style="font-size:12px;color:var(--dim)"></span>
   </div>
   <div class="stat-strip">
     <div class="stat-cell"><div class="stat-val" id="st-total" style="color:var(--text)">0</div><div class="stat-lbl">Total</div></div>
@@ -911,6 +914,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
       <button class="btn" style="font-size:13px;padding:8px 16px" onclick="skipLinkedIn()">Skip for now</button>
       <button class="btn" style="background:rgba(10,102,194,0.15);color:#5B9BD5;border-color:rgba(10,102,194,0.3);font-size:13px;padding:8px 16px" onclick="markLinkedInDone()">Already connected</button>
+      <button class="btn btn-teal" id="li-mcp-btn" style="font-size:13px;padding:8px 16px" onclick="sendLinkedInViaMcp()">Send via MCP</button>
       <button class="btn btn-solid" style="background:#0A66C2;border-color:#0A66C2;font-size:13px;padding:8px 18px" onclick="openLinkedIn()">Open LinkedIn profile</button>
     </div>
   </div>
@@ -1139,6 +1143,7 @@ function clearData(){
 // TOAST & HELPERS
 // ══════════════════════════════════════════════════════════════════
 let _tt;
+let _liBulkRunning=false;
 function toast(msg,type='green'){
   const el=document.getElementById('toast');el.textContent=msg;el.className='toast toast-'+type+' show';
   clearTimeout(_tt);_tt=setTimeout(()=>el.classList.remove('show'),3200);
@@ -1193,6 +1198,32 @@ function statusBadge(c){
   if(c.emailSent)return badge('b-sent','Sent');if(c.approved)return badge('b-approved','Approved');
   return badge('b-pending','Pending');
 }
+function linkedinOutreachPatch(data){
+  const li=data&&data.linkedinOutreach;
+  if(!li||!li.ok)return {};
+  return {
+    linkedinOutreachStatus:li.status||'queued',
+    linkedinOutreachProvider:li.provider||'LinkedIn MCP',
+    linkedinOutreachTool:li.tool||null,
+    linkedinOutreachMessage:li.message||'',
+    linkedinOutreachAt:new Date().toISOString()
+  };
+}
+function linkedInCell(c, pad='3px 9px'){
+  if(!c.emailSent)return '<span style="font-size:11px;color:var(--dim)">—</span>';
+  if(c.linkedinConnected)return '<span class="li-badge li-done">Connected</span>';
+  if(c.linkedinOutreachStatus)return '<span class="li-badge li-queued">MCP queued</span>';
+  return `<button class="btn" style="font-size:11px;padding:${pad};background:rgba(10,102,194,0.12);color:#5B9BD5;border-color:rgba(10,102,194,0.25)" onclick="promptLinkedIn(${c.id})">Connect</button>`;
+}
+function isPendingLinkedInRequest(c){
+  if(!c||isAddressNotFound(c))return false;
+  if(c.replied||c.linkedinConnected||c.linkedinOutreachStatus)return false;
+  if(!(c.linkedinUrl||'').trim())return false;
+  return !!(c.opened||c.emailSent);
+}
+function pendingLinkedInRequests(){
+  return contacts.filter(isPendingLinkedInRequest);
+}
 function lineDiff(o,r){
   const oL=(o||'').split('\n'),rL=(r||'').split('\n'),res=[];
   const mx=Math.max(oL.length,rL.length);
@@ -1228,6 +1259,11 @@ function updateGlobals(){
   const qcb=document.getElementById('q-count-btn');if(qcb)qcb.textContent=p>0?'('+p+')':'';
   const hot=contacts.filter(c=>c.wPriorSWARM>50&&!c.emailSent&&!isAddressNotFound(c)).length;
   const ha=document.getElementById('hot-alert');if(hot>0){ha.style.display='inline';ha.textContent=hot+' HOT SWARMP';}else ha.style.display='none';
+  const liPending=pendingLinkedInRequests().length;
+  const liCount=document.getElementById('contacts-li-bulk-count');
+  const liBtn=document.getElementById('contacts-li-bulk-btn');
+  if(liCount)liCount.textContent=liPending>0?`(${liPending})`:'';
+  if(liBtn)liBtn.disabled=_liBulkRunning||liPending===0;
   const metrics=getCampaignMetrics();
   ['st-total','st-sent','st-opened','st-replied'].forEach((id,i)=>{
     const v=[
@@ -1279,11 +1315,7 @@ function renderContacts(){
     const rb=!c.emailSent
       ?`<button class="btn" style="font-size:11px;padding:4px 9px" onclick="openReview(${c.id})">Review</button>`
       :'';
-    const liCel=c.emailSent
-      ?(c.linkedinConnected
-        ?`<span class="li-badge li-done">Connected</span>`
-        :`<button class="btn" style="font-size:11px;padding:3px 9px;background:rgba(10,102,194,0.12);color:#5B9BD5;border-color:rgba(10,102,194,0.25)" onclick="promptLinkedIn(${c.id})">Connect</button>`)
-      :`<span style="font-size:11px;color:var(--dim)">—</span>`;
+    const liCel=linkedInCell(c);
     return `<tr>
       <td style="white-space:nowrap"><div style="font-weight:500;color:var(--text);font-size:13px">${c.fullName||(c.firstName+' '+c.lastName).trim()}</div><div style="font-size:11px;color:var(--dim);margin-top:1px">${c.jobTitle}</div></td>
       <td><div style="font-size:12px;color:var(--muted);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.firmName}</div></td>
@@ -1297,6 +1329,49 @@ function renderContacts(){
       <td>${rb}</td>
     </tr>`;
   }).join('');
+}
+
+async function sendPendingLinkedInRequests(){
+  if(_liBulkRunning)return;
+  const list=pendingLinkedInRequests();
+  if(!list.length){toast('No pending LinkedIn requests match Sent or Opened','amber');return;}
+  if(!confirm(`Send LinkedIn connection requests for ${list.length} contacts with Sent or Opened status?`))return;
+  _liBulkRunning=true;
+  const btn=document.getElementById('contacts-li-bulk-btn');
+  const statusEl=document.getElementById('contacts-li-bulk-status');
+  if(btn)btn.disabled=true;
+  let ok=0,failed=0,skipped=0;
+  for(let i=0;i<list.length;i++){
+    const c=getC(list[i].id);
+    if(!isPendingLinkedInRequest(c)){skipped++;continue;}
+    if(statusEl)statusEl.textContent=`${i+1}/${list.length} ${c.firstName||''} ${c.lastName||''}`.trim();
+    try{
+      const r=await fetch('/api/linkedin/connect',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({contactId:c.id})
+      });
+      const data=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(data.detail||'LinkedIn MCP send failed');
+      updateC(c.id,{
+        linkedinOutreachStatus:data.status||'queued',
+        linkedinOutreachProvider:data.provider||'LinkedIn MCP',
+        linkedinOutreachTool:data.tool||null,
+        linkedinOutreachMessage:data.message||'',
+        linkedinOutreachAt:new Date().toISOString()
+      });
+      ok++;
+    }catch(e){
+      console.warn('LinkedIn MCP bulk send failed',c?.id,e);
+      failed++;
+    }
+    renderContacts();
+    if(i<list.length-1)await new Promise(r=>setTimeout(r,850));
+  }
+  _liBulkRunning=false;
+  if(statusEl)statusEl.textContent='';
+  updateGlobals();renderContacts();renderSeqStudio();
+  toast(`LinkedIn MCP queued ${ok}${failed?`, ${failed} failed`:''}${skipped?`, ${skipped} skipped`:''}`,(failed&&ok===0)?'amber':'green');
 }
 function openReview(id){
   const c=getC(id);
@@ -1406,6 +1481,7 @@ function importCSV(e){
           linkedinSummary:col(row,'Summarize LinkedIn profile','LinkedIn Summary'),
           linkedinUrl:col(row,'LinkedIn Profile','LinkedIn URL','LinkedIn'),
           linkedinConnected:false,
+          linkedinOutreachStatus:null,
           emailSent:false,opened:false,replied:false,bounced:false,
           sequenceStep:0,approved:false,paused:false,refined:false
         });
@@ -1505,9 +1581,7 @@ function renderQueueCtx(c){
   if(c.pitchAnchor) html+='<div class="ctx-section"><div class="ctx-label">Pitch anchor</div><div class="pitch-anchor">'+esc(c.pitchAnchor)+'</div></div>';
   if(c.notes)       html+='<div class="ctx-section"><div class="ctx-label">Notes</div><div style="font-size:11px;color:var(--muted);line-height:1.6">'+esc(c.notes)+'</div></div>';
   if(c.linkedinSummary) html+='<div class="ctx-section"><div class="ctx-label">LinkedIn summary</div><div style="font-size:11px;color:var(--muted);line-height:1.6">'+esc(c.linkedinSummary)+'</div></div>';
-  const liBtn=c.linkedinConnected
-    ?'<span class="li-badge li-done" style="font-size:11px">Connected</span>'
-    :'<button class="btn" style="font-size:11px;padding:4px 10px;background:rgba(10,102,194,0.12);color:#5B9BD5;border-color:rgba(10,102,194,0.25)" onclick="promptLinkedIn('+c.id+')">'+(c.emailSent?'Connect on LinkedIn':'Send email first')+'</button>';
+  const liBtn=linkedInCell(c,'4px 10px').replace('>Connect<','>Connect on LinkedIn<');
   html+='<div class="ctx-section"><div class="ctx-label">LinkedIn connection</div>'+liBtn+'</div>';
   el.innerHTML=html;
 }
@@ -1604,16 +1678,17 @@ async function doSend(){
       initialEmailSentAt:new Date().toISOString(),
       gmailThreadId:sendData.threadId||null,
       gmailMessageId:sendData.messageId||null,
+      ...linkedinOutreachPatch(sendData),
     });
     errEl.innerHTML='';
-    toast('Sent via Gmail ✓','green');
+    toast(sendData.linkedinOutreach?.ok?'Sent via Gmail + LinkedIn MCP ✓':'Sent via Gmail ✓','green');
   }catch(e){
     errEl.innerHTML='<div class="err-box">Network error: '+e.message+'</div>';
     return;
   }
   const sentContact=getC(selectedQueueEmail);
   advanceQueue();
-  if(sentContact&&!sentContact.linkedinConnected)promptLinkedIn(sentContact.id);
+  if(sentContact&&!sentContact.linkedinConnected&&!sentContact.linkedinOutreachStatus)promptLinkedIn(sentContact.id);
 }
 async function sendContactNow(c){
   const subj=(c.subjectLine||'').trim();
@@ -1645,6 +1720,7 @@ async function sendContactNow(c){
     initialEmailSentAt:new Date().toISOString(),
     gmailThreadId:sendData.threadId||c.gmailThreadId||null,
     gmailMessageId:sendData.messageId||null,
+    ...linkedinOutreachPatch(sendData),
   });
 }
 function copyEmail(){const c=getC(selectedQueueEmail);if(!c)return;const st=sigText();navigator.clipboard.writeText(`Subject: ${document.getElementById('review-subject').value}\n\n${activeBody}${st?'\n\n'+st:''}`).then(()=>toast('Copied','blue')).catch(()=>toast('Copy failed','amber'));}
@@ -2470,11 +2546,7 @@ function renderSeqContactsTable(filtered){
       :c.wPriorSWARM>0
         ?`<span style="font-size:12px;color:var(--muted)">${c.wPriorSWARM}</span>`
         :`<span style="color:var(--dim);font-size:12px">—</span>`;
-    const liCel=c.emailSent
-      ?(c.linkedinConnected
-        ?`<span class="li-badge li-done">Connected</span>`
-        :`<button class="btn" style="font-size:11px;padding:3px 8px;background:rgba(10,102,194,0.12);color:#5B9BD5;border-color:rgba(10,102,194,0.25)" onclick="promptLinkedIn(${c.id})">Connect</button>`)
-      :`<span style="color:var(--dim);font-size:11px">—</span>`;
+    const liCel=linkedInCell(c,'3px 8px');
     const uf=c.totalUnfiled>200?'var(--amber)':'var(--muted)';
     return `<tr>
       <td style="white-space:nowrap"><div style="font-weight:500;color:var(--text);font-size:13px">${c.firstName} ${c.lastName}</div><div style="font-size:11px;color:var(--dim)">${c.jobTitle}</div></td>
@@ -2682,7 +2754,7 @@ async function sendSeqStep(contactId,step){
   }
   renderSeqEditorBody(contactId);renderSeqStudio();
   const sc=getC(contactId);
-  if(sc&&!sc.linkedinConnected)promptLinkedIn(contactId);
+  if(sc&&!sc.linkedinConnected&&!sc.linkedinOutreachStatus)promptLinkedIn(contactId);
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -3281,17 +3353,20 @@ let _liContactId=null;
 
 function promptLinkedIn(contactId){
   const c=getC(contactId);if(!c)return;
-  if(c.linkedinConnected)return; // already done
+  if(c.linkedinConnected||c.linkedinOutreachStatus)return;
   _liContactId=contactId;
   const hasUrl=!!(c.linkedinUrl&&c.linkedinUrl.trim());
   document.getElementById('li-modal-title').textContent=
     `Email sent to ${c.firstName} ${c.lastName} — send a LinkedIn connection?`;
   document.getElementById('li-modal-body').innerHTML=
-    `Connecting on LinkedIn alongside your email boosts reply rates by 2–3x. `+
+    `Send through the LinkedIn MCP if the account is connected there, or open the profile and do it manually. `+
     (hasUrl
-      ?`Click below to open ${c.firstName}'s profile — then hit Connect.`
+      ?`The MCP path queues the contact and connection note without opening LinkedIn.`
       :`<span style="color:var(--amber)">No LinkedIn URL saved for this contact. Add it in their record, or search manually.</span>`);
-  // Update the Open LinkedIn button
+  const mcpBtn=document.getElementById('li-mcp-btn');
+  mcpBtn.style.display=hasUrl?'inline-flex':'none';
+  mcpBtn.disabled=false;
+  mcpBtn.textContent='Send via MCP';
   const openBtn=document.getElementById('li-modal-backdrop').querySelector('.btn-solid');
   if(hasUrl){
     openBtn.style.display='inline-flex';
@@ -3308,15 +3383,43 @@ function openLinkedIn(){
     ? c.linkedinUrl
     : `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(c.firstName+' '+c.lastName+' '+c.firmName)}`;
   window.open(url,'_blank');
-  // Mark as connected after opening — assume Pawel will connect
-  setTimeout(()=>{
-    markLinkedInDone();
-  },2000);
+  toast('LinkedIn profile opened','blue');
+}
+
+async function sendLinkedInViaMcp(){
+  const c=getC(_liContactId);if(!c)return;
+  const btn=document.getElementById('li-mcp-btn');
+  btn.disabled=true;
+  btn.textContent='Sending...';
+  try{
+    const r=await fetch('/api/linkedin/connect',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({contactId:c.id})
+    });
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(data.detail||'LinkedIn MCP send failed');
+    updateC(c.id,{
+      linkedinOutreachStatus:data.status||'queued',
+      linkedinOutreachProvider:data.provider||'LinkedIn MCP',
+      linkedinOutreachTool:data.tool||null,
+      linkedinOutreachMessage:data.message||'',
+      linkedinOutreachAt:new Date().toISOString()
+    });
+    toast('LinkedIn outreach queued via MCP','green');
+    _liContactId=null;
+    document.getElementById('li-modal-backdrop').classList.remove('open');
+    renderContacts();renderSeqStudio();
+  }catch(e){
+    btn.disabled=false;
+    btn.textContent='Send via MCP';
+    toast(e.message||'LinkedIn MCP send failed','amber');
+  }
 }
 
 function markLinkedInDone(){
   if(_liContactId){
-    updateC(_liContactId,{linkedinConnected:true});
+    updateC(_liContactId,{linkedinConnected:true,linkedinOutreachStatus:null});
     toast(`LinkedIn connection sent to ${getC(_liContactId)?.firstName||'contact'}`,'green');
   }
   _liContactId=null;
@@ -3331,7 +3434,7 @@ function skipLinkedIn(){
 
 // Show pending LinkedIn connections count in dashboard
 function getLinkedInPending(){
-  return contacts.filter(c=>c.emailSent&&!c.linkedinConnected).length;
+  return contacts.filter(c=>c.emailSent&&!c.linkedinConnected&&!c.linkedinOutreachStatus).length;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -3481,7 +3584,7 @@ function addInboundContact(alertId){
     pitchAnchor:'Inbound enquiry',
     notes:'Added from inbound alert — '+new Date().toLocaleDateString(),
     templateUsed:'B',subjectLine:'',emailBody:'',
-    linkedinUrl:'',linkedinConnected:false,
+    linkedinUrl:'',linkedinConnected:false,linkedinOutreachStatus:null,
     emailSent:false,opened:false,replied:false,bounced:false,
     sequenceStep:0,approved:false,paused:false,refined:false,
     isInbound:true,inboundSource:'alert'
