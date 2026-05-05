@@ -1148,6 +1148,7 @@ function isAddressNotFound(c){
   const reason=((c.bounceReason||'')+' '+(c.lastBounceReason||'')).toLowerCase();
   return reason.includes('address not found')||reason.includes('hard bounce')||reason.includes('undeliverable');
 }
+function isDeliveredSent(c){return !!(c&&c.emailSent&&!isAddressNotFound(c));}
 function getC(id){
   // Primary: match by email string (stored in data-email on sidebar items)
   if(typeof id==='string'&&id.includes('@'))
@@ -1202,13 +1203,18 @@ function showView(v){
 }
 
 function updateGlobals(){
-  const p=contacts.filter(c=>!c.emailSent&&!c.approved).length;
+  const p=contacts.filter(c=>!c.emailSent&&!c.approved&&!isAddressNotFound(c)).length;
   const pb=document.getElementById('pending-badge');if(p>0){pb.style.display='inline';pb.textContent=p;}else pb.style.display='none';
   const qcb=document.getElementById('q-count-btn');if(qcb)qcb.textContent=p>0?'('+p+')':'';
-  const hot=contacts.filter(c=>c.wPriorSWARM>50&&!c.emailSent).length;
+  const hot=contacts.filter(c=>c.wPriorSWARM>50&&!c.emailSent&&!isAddressNotFound(c)).length;
   const ha=document.getElementById('hot-alert');if(hot>0){ha.style.display='inline';ha.textContent=hot+' HOT SWARMP';}else ha.style.display='none';
   ['st-total','st-sent','st-opened','st-replied'].forEach((id,i)=>{
-    const v=[contacts.length,contacts.filter(c=>c.emailSent).length,contacts.filter(c=>c.opened).length,contacts.filter(c=>c.replied).length][i];
+    const v=[
+      contacts.filter(c=>!isAddressNotFound(c)).length,
+      contacts.filter(isDeliveredSent).length,
+      contacts.filter(c=>isDeliveredSent(c)&&c.opened).length,
+      contacts.filter(c=>isDeliveredSent(c)&&c.replied).length
+    ][i];
     const el=document.getElementById(id);if(el)el.textContent=v;
   });
 }
@@ -2791,7 +2797,7 @@ function renderDashboard(){
   const op=delivered.filter(c=>c.opened).length,rp=delivered.filter(c=>c.replied).length,bo=sent.filter(c=>isAddressNotFound(c)).length;
   const deliveredCount=delivered.length;
   document.getElementById('dash-top').innerHTML=[
-    {l:'Emails sent',v:sent.length,c:'var(--text)'},{l:'Open rate',v:(deliveredCount?Math.round(op/deliveredCount*100):0)+'%',c:'var(--blue)',s:'vs 6% avg'},
+    {l:'Emails sent',v:deliveredCount,c:'var(--text)',s:bo?bo+' bounced excluded':''},{l:'Open rate',v:(deliveredCount?Math.round(op/deliveredCount*100):0)+'%',c:'var(--blue)',s:'vs 6% avg'},
     {l:'Reply rate',v:(deliveredCount?Math.round(rp/deliveredCount*100):0)+'%',c:'var(--teal)',s:'vs 0.9% avg'},{l:'Bounces',v:bo,c:bo>0?'var(--red)':'var(--dim)'},
     {l:'LinkedIn pending',v:getLinkedInPending(),c:getLinkedInPending()>0?'var(--amber)':'var(--dim)',s:'connections to send'},
   ].map(s=>`<div class="stat-card"><div style="font-size:10px;color:var(--dim);margin-bottom:5px">${s.l}</div><div style="font-size:24px;font-weight:600;color:${s.c}">${s.v}</div>${s.s?`<div style="font-size:10px;color:var(--dim);margin-top:2px">${s.s}</div>`:''}</div>`).join('');
@@ -2799,8 +2805,7 @@ function renderDashboard(){
   let tierHtml = '';
   [1,2,3].forEach(t=>{
     const tc=contacts.filter(c=>c.tier===t);
-    const ts=tc.filter(c=>c.emailSent);
-    const td=ts.filter(c=>!isAddressNotFound(c));
+    const td=tc.filter(isDeliveredSent);
     const tt=td.length||1;
     const o=td.filter(c=>c.opened).length;
     const r=td.filter(c=>c.replied).length;
@@ -2810,7 +2815,7 @@ function renderDashboard(){
     tierHtml += `<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">
       <td>${badge('b-t'+t,'Tier '+t)} ${expandBtn}</td>
       <td style="color:var(--muted)">${tc.length}</td>
-      <td>${ts.length}</td>
+      <td>${td.length}</td>
       <td>${o}</td>
       <td style="color:var(--blue);font-weight:500">${tt>1?Math.round(o/tt*100):0}%</td>
       <td>${r}</td>
@@ -2820,15 +2825,14 @@ function renderDashboard(){
     ['A','B','C'].forEach(tpl=>{
       const tplInfo=TPL[tpl]||{label:'Template '+tpl,cls:'b-tpl'+tpl.toLowerCase()};
       const tpc=tc.filter(c=>(c.templateUsed||'B')===tpl);
-      const tps=tpc.filter(c=>c.emailSent);
-      const tpd=tps.filter(c=>!isAddressNotFound(c));
+      const tpd=tpc.filter(isDeliveredSent);
       const tpt=tpd.length||1;
       const tpo=tpd.filter(c=>c.opened).length;
       const tpr=tpd.filter(c=>c.replied).length;
       tierHtml += `<tr class="tpl-sub-row" id="tpl-row-${t}-${tpl}">
         <td style="padding-left:28px">${badge(tplInfo.cls,tpl)}<span style="font-size:11px;color:var(--dim);margin-left:5px">${tplInfo.desc||tplInfo.label}</span></td>
         <td style="color:var(--muted);font-size:12px">${tpc.length}</td>
-        <td style="font-size:12px">${tps.length}</td>
+        <td style="font-size:12px">${tpd.length}</td>
         <td style="font-size:12px">${tpo}</td>
         <td style="color:var(--blue);font-size:12px">${tpt>1?Math.round(tpo/tpt*100):0}%</td>
         <td style="font-size:12px">${tpr}</td>
@@ -2839,7 +2843,13 @@ function renderDashboard(){
   document.getElementById('tier-tbody').innerHTML=tierHtml;
   const firms={};
   contacts.forEach(c=>{const fn=(c.firmName||'').trim();if(!fn)return; // skip blank firm names
-  if(!firms[fn])firms[fn]={n:0,s:0,o:0,r:0,firm:fn,tier:c.tier};firms[fn].n++;if(c.tier<firms[fn].tier)firms[fn].tier=c.tier;if(c.emailSent)firms[fn].s++;if(c.opened)firms[fn].o++;if(c.replied)firms[fn].r++;});
+  if(!firms[fn])firms[fn]={n:0,s:0,o:0,r:0,firm:fn,tier:c.tier};
+  if(!isAddressNotFound(c))firms[fn].n++;
+  if(c.tier<firms[fn].tier)firms[fn].tier=c.tier;
+  if(isDeliveredSent(c))firms[fn].s++;
+  if(isDeliveredSent(c)&&c.opened)firms[fn].o++;
+  if(isDeliveredSent(c)&&c.replied)firms[fn].r++;
+  });
   document.getElementById('firm-tbody').innerHTML=Object.values(firms).sort((a,b)=>b.n-a.n).map(f=>{
     const tierCls='b-t'+f.tier;
     return `<tr>
@@ -2853,8 +2863,8 @@ function renderDashboard(){
   }).join('');
 }
 function exportCSV(){
-  const rows=contacts.map(c=>[c.firstName,c.lastName,c.firmName,c.tier,c.totalUnfiled,c.workEmail,c.emailSent?'Yes':'No',c.opened?'Yes':'No',c.replied?'Yes':'No'].join(','));
-  const a=document.createElement('a');a.href='data:text/csv,'+encodeURIComponent('First,Last,Firm,Tier,Unfiled,Email,Sent,Opened,Replied\n'+rows.join('\n'));a.download='canusa_campaign.csv';a.click();
+  const rows=contacts.map(c=>[c.firstName,c.lastName,c.firmName,c.tier,c.totalUnfiled,c.workEmail,isDeliveredSent(c)?'Yes':'No',(isDeliveredSent(c)&&c.opened)?'Yes':'No',(isDeliveredSent(c)&&c.replied)?'Yes':'No',isAddressNotFound(c)?'Yes':'No'].join(','));
+  const a=document.createElement('a');a.href='data:text/csv,'+encodeURIComponent('First,Last,Firm,Tier,Unfiled,Email,Sent,Opened,Replied,AddressNotFound\n'+rows.join('\n'));a.download='canusa_campaign.csv';a.click();
 }
 // ── RICH TEXT SIGNATURE EDITOR ──────────────────────────────────
 function updateSignature(){
