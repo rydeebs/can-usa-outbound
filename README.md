@@ -110,25 +110,27 @@ The agent sends approved categories automatically. Hard opt-outs and out-of-offi
 
 ---
 
-## LinkedIn outreach through your MCP
+## LinkedIn outreach through Unipile MCP
 
-The platform can queue a LinkedIn connection request after an email is sent. It calls your configured LinkedIn MCP server instead of logging into LinkedIn directly.
+The platform can queue a LinkedIn connection request after an email is sent. It calls Unipile's remote MCP server instead of logging into LinkedIn directly.
 
-Your MCP server should expose tools for contact/lead creation and LinkedIn connection requests. The app can discover likely tool names automatically, or you can pin exact names with environment variables.
+Before enabling this, connect Pawel's LinkedIn account in Unipile and copy the API key plus connected LinkedIn account id.
 
 Set these environment variables on Railway:
 
 ```bash
-LINKEDIN_MCP_SERVER_URL=...
+LINKEDIN_MCP_SERVER_URL=https://developer.unipile.com/mcp
+LINKEDIN_MCP_API_BASE_URL=https://api22.unipile.com:15254
 LINKEDIN_MCP_API_KEY=...
+LINKEDIN_MCP_ACCOUNT_ID=...
 LINKEDIN_MCP_AUTO_CONNECT=true
 LINKEDIN_MCP_LIST_NAME="CAN USA LinkedIn Outreach"
 LINKEDIN_MCP_CAMPAIGN_NAME="CAN USA LinkedIn Outreach"
 ```
 
-If your MCP exposes custom tool names, set `LINKEDIN_MCP_CONTACT_TOOL`, `LINKEDIN_MCP_CONNECT_TOOL`, or `LINKEDIN_MCP_LIST_TOOL` to the exact names. Without those overrides, the app discovers matching contact, LinkedIn invitation, and list/campaign tools automatically.
+If Unipile's MCP exposes custom tool names in your account, set `LINKEDIN_MCP_CONTACT_TOOL`, `LINKEDIN_MCP_CONNECT_TOOL`, or `LINKEDIN_MCP_LIST_TOOL` to the exact names. Without those overrides, the app discovers matching contact, LinkedIn invitation, and list/campaign tools automatically.
 
-The smallest useful MCP surface is one tool whose name or description includes LinkedIn plus one of: connect, connection, invite, invitation, or request. It should accept fields such as `linkedinUrl`, `firstName`, `lastName`, `companyName`, and `message`.
+The client sends the contact's `linkedinUrl`, the parsed `/in/...` public identifier, `account_id`, contact name, company, email, and the connection `message`. For Unipile, the client resolves the public identifier to `provider_id` through `GET /api/v1/users/{identifier}` before calling `POST /api/v1/users/invite`.
 
 When `LINKEDIN_MCP_AUTO_CONNECT=true`, every successful initial email send also queues the LinkedIn connection request if the contact has a LinkedIn URL and has not already been queued or marked connected.
 

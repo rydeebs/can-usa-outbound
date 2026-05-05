@@ -12,6 +12,7 @@ import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import requests
 
@@ -40,7 +41,9 @@ class LinkedInMCPClient:
 
     Env vars:
       LINKEDIN_MCP_SERVER_URL Remote MCP URL for your LinkedIn MCP server
+      LINKEDIN_MCP_API_BASE_URL Optional Unipile API base URL/DSN
       LINKEDIN_MCP_API_KEY    Optional bearer/API key for your MCP gateway
+      LINKEDIN_MCP_ACCOUNT_ID Optional connected LinkedIn account id
       LINKEDIN_MCP_CONTACT_TOOL Optional exact MCP tool name for contact upsert
       LINKEDIN_MCP_CONNECT_TOOL   Optional exact MCP tool name for LinkedIn invite
       LINKEDIN_MCP_LIST_TOOL  Optional exact MCP tool name for list/campaign add
@@ -49,7 +52,12 @@ class LinkedInMCPClient:
     """
 
     def __init__(self, server_url: str | None = None, api_key: str | None = None) -> None:
-        self.server_url = (server_url or os.environ.get("LINKEDIN_MCP_SERVER_URL", "")).strip()
+        self.server_url = (
+            server_url
+            or os.environ.get("LINKEDIN_MCP_SERVER_URL", "")
+            or "https://developer.unipile.com/mcp"
+        ).strip()
+        self.api_base_url = os.environ.get("LINKEDIN_MCP_API_BASE_URL", "").strip().rstrip("/")
         self.api_key = (api_key or os.environ.get("LINKEDIN_MCP_API_KEY", "")).strip()
         if not self.server_url:
             raise LinkedInMCPNotConfigured("LINKEDIN_MCP_SERVER_URL is required.")
@@ -67,7 +75,7 @@ class LinkedInMCPClient:
         contact_result = self.upsert_contact(contact, required=False)
         linkedin_tool = self._find_tool(
             env_name="LINKEDIN_MCP_CONNECT_TOOL",
-            include_any=("linkedin",),
+            include_any=("linkedin", "invite", "invitation", "connect", "connection"),
             include_one_of=("connect", "connection", "invite", "invitation", "request"),
         )
         if linkedin_tool:
@@ -94,6 +102,10 @@ class LinkedInMCPClient:
             )
             response = self._call_tool(list_tool["name"], args)
             return LinkedInMCPResult(True, "mcp_list", list_tool["name"], response)
+
+        execute_tool = next((t for t in self._list_tools() if t.get("name") == "execute-request"), None)
+        if execute_tool:
+            return self._send_unipile_invite(contact, message, execute_tool["name"])
 
         if not contact_result:
             raise LinkedInMCPError(
@@ -141,6 +153,7 @@ class LinkedInMCPClient:
         }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+            headers["X-API-KEY"] = self.api_key
             headers["X-API-Key"] = self.api_key
 
         resp = requests.post(
@@ -193,6 +206,90 @@ class LinkedInMCPClient:
 
     def _call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return self._rpc("tools/call", {"name": name, "arguments": arguments})
+
+    # ── Unipile execute-request fallback ─────────────────────────────────
+
+    def _send_unipile_invite(self, contact: dict, message: str, tool_name: str) -> LinkedInMCPResult:
+        if not self.api_base_url:
+            raise LinkedInMCPError("LINKEDIN_MCP_API_BASE_URL is required for Unipile execute-request.")
+        if not self.api_key:
+            raise LinkedInMCPError("LINKEDIN_MCP_API_KEY is required for Unipile execute-request.")
+
+        payload = self._contact_payload(contact)
+        account_id = os.environ.get("LINKEDIN_MCP_ACCOUNT_ID", "").strip()
+        if not account_id:
+            raise LinkedInMCPError("LINKEDIN_MCP_ACCOUNT_ID is required to send Unipile invitations.")
+
+        provider_id = payload.get("providerId") or ""
+        if not provider_id:
+            identifier = payload.get("publicIdentifier") or payload.get("linkedinUrl") or ""
+            if not identifier:
+                raise LinkedInMCPError("Contact is missing a LinkedIn URL/public identifier.")
+            profile = self._unipile_execute(
+                "GET",
+                f"{self.api_base_url}/api/v1/users/{identifier}",
+                query={"account_id": account_id},
+                tool_name=tool_name,
+            )
+            provider_id = self._extract_unipile_json(profile).get("provider_id", "")
+            if not provider_id:
+                raise LinkedInMCPError("Unipile profile lookup did not return provider_id.")
+
+        invite = self._unipile_execute(
+            "POST",
+            f"{self.api_base_url}/api/v1/users/invite",
+            body={
+                "account_id": account_id,
+                "provider_id": provider_id,
+                "message": message[:300],
+            },
+            tool_name=tool_name,
+        )
+        return LinkedInMCPResult(True, "linkedin_connection", tool_name, invite)
+
+    def _unipile_execute(
+        self,
+        method: str,
+        url: str,
+        tool_name: str,
+        query: Optional[dict[str, str]] = None,
+        body: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        har: dict[str, Any] = {
+            "method": method.lower(),
+            "url": url,
+            "headers": [
+                {"name": "X-API-KEY", "value": self.api_key},
+                {"name": "accept", "value": "application/json"},
+            ],
+        }
+        if query:
+            har["queryString"] = [{"name": k, "value": v} for k, v in query.items() if v]
+        if body is not None:
+            har["headers"].append({"name": "content-type", "value": "application/json"})
+            har["postData"] = {"mimeType": "application/json", "text": json.dumps(body)}
+        return self._call_tool(tool_name, {"harRequest": har})
+
+    @staticmethod
+    def _extract_unipile_json(result: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(result, dict):
+            return {}
+        content = result.get("content")
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    text = item.get("text", "")
+                    try:
+                        parsed = json.loads(text)
+                        if isinstance(parsed, dict):
+                            return parsed
+                    except json.JSONDecodeError:
+                        continue
+        for key in ("data", "result", "response"):
+            value = result.get(key)
+            if isinstance(value, dict):
+                return value
+        return result
 
     # ── Tool/schema helpers ───────────────────────────────────────────────
 
@@ -252,6 +349,15 @@ class LinkedInMCPClient:
             "linkedin": contact_payload["linkedinUrl"],
             "profileUrl": contact_payload["linkedinUrl"],
             "profile_url": contact_payload["linkedinUrl"],
+            "identifier": contact_payload["publicIdentifier"],
+            "publicIdentifier": contact_payload["publicIdentifier"],
+            "public_identifier": contact_payload["publicIdentifier"],
+            "providerId": contact_payload.get("providerId", ""),
+            "provider_id": contact_payload.get("providerId", ""),
+            "memberUrn": contact_payload.get("memberUrn", ""),
+            "member_urn": contact_payload.get("memberUrn", ""),
+            "accountId": extra.get("accountId", ""),
+            "account_id": extra.get("accountId", ""),
             "company": contact_payload["companyName"],
             "companyName": contact_payload["companyName"],
             "company_name": contact_payload["companyName"],
@@ -282,6 +388,12 @@ class LinkedInMCPClient:
                 args[prop] = contact_payload
             elif "message" in lower or "note" in lower:
                 args[prop] = message or ""
+            elif lower in {"identifier", "publicidentifier", "public_identifier", "profile"}:
+                args[prop] = contact_payload["publicIdentifier"] or contact_payload["linkedinUrl"]
+            elif lower in {"providerid", "provider_id"}:
+                args[prop] = contact_payload.get("providerId") or contact_payload["publicIdentifier"]
+            elif lower in {"accountid", "account_id"}:
+                args[prop] = extra.get("accountId", "")
             elif "list" in lower:
                 args[prop] = extra.get("listName", "")
             elif "campaign" in lower:
@@ -292,17 +404,34 @@ class LinkedInMCPClient:
         return {k: v for k, v in args.items() if v not in (None, "")}
 
     @staticmethod
+    def _linkedin_public_identifier(linkedin_url: str) -> str:
+        value = (linkedin_url or "").strip()
+        if not value:
+            return ""
+        if "/" not in value and "linkedin.com" not in value:
+            return value
+        parsed = urlparse(value if "://" in value else f"https://{value}")
+        parts = [p for p in parsed.path.split("/") if p]
+        if len(parts) >= 2 and parts[0].lower() == "in":
+            return parts[1]
+        return parts[-1] if parts else ""
+
+    @staticmethod
     def _contact_payload(contact: dict) -> dict[str, Any]:
         first = (contact.get("firstName") or "").strip()
         last = (contact.get("lastName") or "").strip()
         full = (contact.get("fullName") or f"{first} {last}").strip()
+        linkedin_url = (contact.get("linkedinUrl") or "").strip()
         return {
             "externalId": str(contact.get("id", "")),
             "firstName": first,
             "lastName": last,
             "fullName": full,
             "email": (contact.get("workEmail") or "").strip(),
-            "linkedinUrl": (contact.get("linkedinUrl") or "").strip(),
+            "linkedinUrl": linkedin_url,
+            "publicIdentifier": LinkedInMCPClient._linkedin_public_identifier(linkedin_url),
+            "providerId": (contact.get("linkedinProviderId") or contact.get("provider_id") or "").strip(),
+            "memberUrn": (contact.get("linkedinMemberUrn") or contact.get("member_urn") or "").strip(),
             "companyName": (contact.get("firmName") or "").strip(),
             "jobTitle": (contact.get("jobTitle") or "").strip(),
             "source": "CAN USA outbound",
@@ -316,6 +445,7 @@ class LinkedInMCPClient:
     @staticmethod
     def _campaign_context() -> dict[str, str]:
         return {
+            "accountId": os.environ.get("LINKEDIN_MCP_ACCOUNT_ID", ""),
             "listName": os.environ.get("LINKEDIN_MCP_LIST_NAME", "CAN USA LinkedIn Outreach"),
             "campaignName": os.environ.get("LINKEDIN_MCP_CAMPAIGN_NAME", "CAN USA LinkedIn Outreach"),
         }
