@@ -245,7 +245,18 @@ class LinkedInMCPClient:
             },
             tool_name=tool_name,
         )
-        return LinkedInMCPResult(True, "linkedin_connection", tool_name, invite)
+        invite_json = self._extract_unipile_json(invite)
+        if invite_json.get("invitation_id") or invite_json.get("object") == "UserInvitationSent":
+            return LinkedInMCPResult(True, "linkedin_invitation_sent", tool_name, invite)
+
+        error_type = invite_json.get("type", "")
+        if error_type == "errors/already_connected":
+            return LinkedInMCPResult(True, "linkedin_already_connected", tool_name, invite)
+        if error_type in ("errors/already_invited_recently", "errors/action_already_performed"):
+            return LinkedInMCPResult(True, "linkedin_invitation_pending", tool_name, invite)
+
+        detail = invite_json.get("detail") or invite_json.get("title") or json.dumps(invite_json)[:300]
+        raise LinkedInMCPError(f"Unipile invitation was not sent: {detail}")
 
     def _unipile_execute(
         self,

@@ -1224,8 +1224,14 @@ function linkedinOutreachPatch(data){
 function linkedInCell(c, pad='3px 9px'){
   if(!c.emailSent)return '<span style="font-size:11px;color:var(--dim)">—</span>';
   if(c.linkedinConnected)return '<span class="li-badge li-done">Connected</span>';
-  if(c.linkedinOutreachStatus)return '<span class="li-badge li-queued">MCP queued</span>';
+  if(c.linkedinOutreachStatus)return `<span class="li-badge li-queued">${linkedInStatusLabel(c.linkedinOutreachStatus)}</span>`;
   return `<button class="btn" style="font-size:11px;padding:${pad};background:rgba(10,102,194,0.12);color:#5B9BD5;border-color:rgba(10,102,194,0.25)" data-email="${attrEsc(c.workEmail||'')}" onclick="promptLinkedIn(this.dataset.email)">Connect</button>`;
+}
+function linkedInStatusLabel(status){
+  if(status==='linkedin_invitation_sent'||status==='linkedin_connection')return 'Invite sent';
+  if(status==='linkedin_invitation_pending')return 'Invite pending';
+  if(status==='linkedin_already_connected')return 'Connected';
+  return 'MCP sent';
 }
 function isPendingLinkedInRequest(c){
   if(!c||isAddressNotFound(c))return false;
@@ -1383,7 +1389,7 @@ async function sendPendingLinkedInRequests(){
   _liBulkRunning=false;
   if(statusEl)statusEl.textContent='';
   updateGlobals();renderContacts();renderSeqStudio();
-  toast(`LinkedIn MCP queued ${ok}${failed?`, ${failed} failed`:''}${skipped?`, ${skipped} skipped`:''}`,(failed&&ok===0)?'amber':'green');
+  toast(`LinkedIn invites sent ${ok}${failed?`, ${failed} failed`:''}${skipped?`, ${skipped} skipped`:''}`,(failed&&ok===0)?'amber':'green');
 }
 function openReview(id){
   const c=getC(id);
@@ -3418,7 +3424,7 @@ async function sendLinkedInViaMcp(){
       linkedinOutreachMessage:data.message||'',
       linkedinOutreachAt:new Date().toISOString()
     });
-    toast('LinkedIn outreach queued via MCP','green');
+    toast('LinkedIn invitation sent','green');
     _liContactId=null;
     document.getElementById('li-modal-backdrop').classList.remove('open');
     renderContacts();renderSeqStudio();
