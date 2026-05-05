@@ -160,6 +160,40 @@ class GraphClient:
             )
         return profile_email
 
+    def _thread_reply_metadata(
+        self, thread_id: str,
+    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        """Returns (message_id, references, subject) from the first message in a Gmail thread."""
+        try:
+            thread = self._service.users().threads().get(
+                userId="me",
+                id=thread_id,
+                format="metadata",
+                metadataHeaders=["Message-ID", "References", "Subject"],
+            ).execute()
+            messages = thread.get("messages", [])
+            if not messages:
+                return None, None, None
+            headers = {
+                h["name"].lower(): h["value"]
+                for h in messages[0].get("payload", {}).get("headers", [])
+            }
+            return (
+                headers.get("message-id"),
+                headers.get("references"),
+                headers.get("subject"),
+            )
+        except Exception as e:
+            log.warning(f"Could not fetch Gmail thread metadata for {thread_id}: {e}")
+            return None, None, None
+
+    @staticmethod
+    def _reply_subject(subject: str) -> str:
+        subject = (subject or "").strip()
+        if not subject:
+            return "Re:"
+        return subject if subject.lower().startswith("re:") else f"Re: {subject}"
+
     # ── Inbox polling ──────────────────────────────────────────────────────
 
     def get_new_replies(self) -> list[dict]:
@@ -254,6 +288,13 @@ class GraphClient:
                 html = html.replace("</body>", f"{pixel}</body>")
             else:
                 html = html + pixel
+        if thread_id:
+            message_id, references, thread_subject = self._thread_reply_metadata(thread_id)
+            if thread_subject:
+                subject = self._reply_subject(thread_subject)
+        else:
+            message_id = references = None
+
         if html:
             mime_msg = MIMEMultipart("alternative")
             mime_msg.attach(MIMEText(body, "plain"))
@@ -275,6 +316,12 @@ class GraphClient:
         mime_msg["to"]      = to
         mime_msg["from"]    = self._from_address()
         mime_msg["subject"] = subject
+        if message_id:
+            mime_msg["In-Reply-To"] = message_id
+            mime_msg["References"] = (
+                f"{references} {message_id}".strip()
+                if references else message_id
+            )
         if cc:
             mime_msg["cc"] = ", ".join(cc)
 

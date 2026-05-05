@@ -37,6 +37,14 @@ DAYS_FROM_INITIAL = {
 }
 
 
+def sequence_reply_subject(contact: dict) -> str:
+    """All follow-ups should reply to the original outbound thread."""
+    original = (contact.get("subjectLine") or f"{contact.get('firmName', '')} + CAN USA").strip()
+    if not original:
+        original = "CAN USA"
+    return original if original.lower().startswith("re:") else f"Re: {original}"
+
+
 class SequenceEngine:
     """
     Answers two questions:
@@ -147,7 +155,7 @@ class SequenceEngine:
         seq = self._store.get_seq_emails(contact["id"])
         custom = seq.get(str(step))
         if custom and custom.get("body"):
-            return custom.get("subject", ""), custom["body"]
+            return sequence_reply_subject(contact), custom["body"]
 
         # Generate a default follow-up
         return self._default_followup(contact, step)
@@ -162,9 +170,9 @@ class SequenceEngine:
         sub10a = contact.get("sub10A", 0)
         swarmp = contact.get("wPriorSWARM", 0)
         orig_subject = contact.get("subjectLine", f"{firm} + CAN USA")
+        subject = sequence_reply_subject(contact)
 
         if step == 1:
-            subject = f"Re: {orig_subject}"
             body = (
                 f"Hi {first},\n\n"
                 f"Just following up to make sure my previous note didn't get buried. "
@@ -174,7 +182,6 @@ class SequenceEngine:
             )
 
         elif step == 2:
-            subject = f"{firm} + SWARMP risk + CAN USA"
             body = (
                 f"Hi {first},\n\n"
                 f"One more angle: {firm} has {swarmp} buildings with prior SWARMP "
@@ -187,7 +194,6 @@ class SequenceEngine:
             )
 
         elif step == 3:
-            subject = f"2/21/2027 — {sub10a} buildings, {firm}"
             body = (
                 f"Hi {first},\n\n"
                 f"I'll be direct: sub-cycle 10A closes 2/21/2027. {firm} has {sub10a} "
@@ -199,7 +205,6 @@ class SequenceEngine:
             )
 
         elif step == 4:
-            subject = f"Last note — {firm} + CAN USA"
             body = (
                 f"Hi {first},\n\n"
                 f"This is my last follow-up.\n\n"

@@ -955,13 +955,19 @@ function defaultSig(){return '';}
 // ══════════════════════════════════════════════════════════════════
 // SEQUENCE EMAIL DEFAULTS
 // ══════════════════════════════════════════════════════════════════
+function sequenceReplySubject(c){
+  const subj=(c?.subjectLine||`${c?.firmName||''} + CAN USA`).trim()||'CAN USA';
+  return subj.toLowerCase().startsWith('re:')?subj:`Re: ${subj}`;
+}
+
 function defaultSeqEmail(step,c){
+  const replySubject=sequenceReplySubject(c);
   switch(step){
     case 0:return{subject:c.subjectLine,body:c.emailBody};
-    case 1:return{subject:`Re: ${c.subjectLine}`,body:`Hi ${c.firstName},\n\nJust following up to make sure my previous note didn't get buried. ${c.firmName} has ${c.sub10A} buildings in sub-cycle 10A with the 2/21/2027 deadline approaching.\n\nHappy to keep it to 15 minutes. What works over the next week or two?`};
-    case 2:return{subject:`${c.firmName} + SWARMP risk + CAN USA`,body:`Hi ${c.firstName},\n\nOne more angle: ${c.firmName} has ${c.wPriorSWARM} buildings with prior SWARMP classifications. At sub-cycle 10A close (2/21/2027), those auto-classify as Unsafe if unfiled, triggering mandatory sidewalk sheds or netting.\n\nRope access clears those buildings faster. And if any turn up Unsafe, we install DOB-compliant containment netting as the alternative to sidewalk sheds.\n\nWorth 15 minutes?`};
-    case 3:return{subject:`2/21/2027 — ${c.sub10A} buildings, ${c.firmName}`,body:`Hi ${c.firstName},\n\nI'll be direct: sub-cycle 10A closes 2/21/2027. ${c.firmName} has ${c.sub10A} buildings to file. Scaffold at 2–4 weeks per building means you're compressing against the deadline.\n\nRope access at 2–3 days per building is the only realistic path through ${c.sub10A} buildings before February.\n\nDo you have 15 minutes this week?`};
-    case 4:return{subject:`Last note — ${c.firmName} + CAN USA`,body:`Hi ${c.firstName},\n\nThis is my last follow-up.\n\nIf the 10A deadline (2/21/2027) ever becomes a live problem for ${c.firmName}, we're the fastest path through it. Just reply and I'll get something on the calendar same day.\n\nWishing you a smooth inspection season.`};
+    case 1:return{subject:replySubject,body:`Hi ${c.firstName},\n\nJust following up to make sure my previous note didn't get buried. ${c.firmName} has ${c.sub10A} buildings in sub-cycle 10A with the 2/21/2027 deadline approaching.\n\nHappy to keep it to 15 minutes. What works over the next week or two?`};
+    case 2:return{subject:replySubject,body:`Hi ${c.firstName},\n\nOne more angle: ${c.firmName} has ${c.wPriorSWARM} buildings with prior SWARMP classifications. At sub-cycle 10A close (2/21/2027), those auto-classify as Unsafe if unfiled, triggering mandatory sidewalk sheds or netting.\n\nRope access clears those buildings faster. And if any turn up Unsafe, we install DOB-compliant containment netting as the alternative to sidewalk sheds.\n\nWorth 15 minutes?`};
+    case 3:return{subject:replySubject,body:`Hi ${c.firstName},\n\nI'll be direct: sub-cycle 10A closes 2/21/2027. ${c.firmName} has ${c.sub10A} buildings to file. Scaffold at 2–4 weeks per building means you're compressing against the deadline.\n\nRope access at 2–3 days per building is the only realistic path through ${c.sub10A} buildings before February.\n\nDo you have 15 minutes this week?`};
+    case 4:return{subject:replySubject,body:`Hi ${c.firstName},\n\nThis is my last follow-up.\n\nIf the 10A deadline (2/21/2027) ever becomes a live problem for ${c.firmName}, we're the fastest path through it. Just reply and I'll get something on the calendar same day.\n\nWishing you a smooth inspection season.`};
     default:return{subject:'',body:''};
   }
 }
@@ -2606,9 +2612,14 @@ function openSeqOutlook(contactId,step){
 }
 async function sendSeqStep(contactId,step){
   const c=getC(contactId);if(!c)return;
+  if(step>0&&!c.gmailThreadId){
+    toast('Cannot send follow-up: original Gmail thread is missing','amber');
+    return;
+  }
   const email=getSeqEmail(contactId,step);
+  const subject=step>0?sequenceReplySubject(c):email.subject;
   const tpl=getHtmlTemplate(c.tier,c.templateUsed);
-  const htmlContent=tpl?applyHtmlTemplate(tpl.html,c,email.body,email.subject):null;
+  const htmlContent=tpl?applyHtmlTemplate(tpl.html,c,email.body,subject):null;
   toast('Sending...','blue');
   try{
     const r=await fetch('/api/send',{
@@ -2616,7 +2627,7 @@ async function sendSeqStep(contactId,step){
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         to:c.workEmail,
-        subject:email.subject,
+        subject,
         body:email.body,
         html:htmlContent,
         htmlSignature:userSignature,
@@ -2630,7 +2641,7 @@ async function sendSeqStep(contactId,step){
       return;
     }
     const sendData=await r.json().catch(()=>({}));
-    markSeqEmailSent(contactId,step,email.subject,email.body);
+    markSeqEmailSent(contactId,step,subject,email.body);
     updateC(contactId,{
       emailSent:true,
       sequenceStep:step+1,

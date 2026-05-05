@@ -199,6 +199,13 @@ def _send_due_followups(
             sig = ""  # signature handled by template or appended plain
             html_content = tpl.apply(contact, body_text, subject)
             thread_id = contact.get("gmailThreadId")  # reply in original thread
+            if not thread_id:
+                log.error(
+                    "Skipping follow-up step %s for %s: missing original Gmail thread",
+                    step,
+                    contact.get("workEmail", "?"),
+                )
+                continue
 
             result = graph.send_email(
                 to=contact["workEmail"],
