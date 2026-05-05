@@ -334,10 +334,16 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     <div class="stat-cell"><div class="stat-val" id="st-replied" style="color:var(--teal)">0</div><div class="stat-lbl">Replied</div></div>
   </div>
   <div class="filter-bar">
-    <input class="inp" id="c-search" placeholder="Search name or firm..." oninput="renderContacts()" style="width:155px"/>
+    <input class="inp" id="c-search" placeholder="Contact..." oninput="renderContacts()" style="width:125px"/>
+    <input class="inp" id="c-firm" placeholder="Firm..." oninput="renderContacts()" style="width:125px"/>
     <select class="inp" id="c-tier" onchange="renderContacts()" style="width:106px"><option value="all">All tiers</option><option value="1">Tier 1</option><option value="2">Tier 2</option><option value="3">Tier 3</option></select>
+    <select class="inp" id="c-unfiled" onchange="renderContacts()" style="width:118px"><option value="all">All unfiled</option><option value="0">0</option><option value="1-49">1-49</option><option value="50-149">50-149</option><option value="150-249">150-249</option><option value="250+">250+</option></select>
+    <select class="inp" id="c-10a" onchange="renderContacts()" style="width:105px"><option value="all">All 10A</option><option value="0">0</option><option value="1-9">1-9</option><option value="10-49">10-49</option><option value="50+">50+</option></select>
+    <select class="inp" id="c-swarmp" onchange="renderContacts()" style="width:118px"><option value="all">All SWARMP</option><option value="0">None</option><option value="1-50">1-50</option><option value="hot">Hot 51+</option></select>
     <select class="inp" id="c-tpl" onchange="renderContacts()" style="width:120px"><option value="all">All templates</option><option value="A">Template A</option><option value="B">Template B</option><option value="C">Template C</option></select>
-    <select class="inp" id="c-status" onchange="renderContacts()" style="width:130px"><option value="all">All</option><option value="unsent">Unsent</option><option value="sent">Sent</option><option value="opened">Opened</option><option value="replied">Replied</option><option value="empty">Empty subject/body</option><option value="unknown">Has &lt;unknown&gt;</option></select>
+    <select class="inp" id="c-status" onchange="renderContacts()" style="width:130px"><option value="all">All statuses</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="unsent">Unsent</option><option value="sent">Sent</option><option value="opened">Opened</option><option value="replied">Replied</option><option value="bounced">Bounced</option><option value="empty">Empty body</option><option value="unknown">Has &lt;unknown&gt;</option></select>
+    <select class="inp" id="c-linkedin" onchange="renderContacts()" style="width:132px"><option value="all">All LinkedIn</option><option value="ready">Connect button</option><option value="invite-sent">Invite sent</option><option value="invite-pending">Invite pending</option><option value="connected">Connected</option><option value="needs-retry">Needs retry</option><option value="missing">Missing URL</option></select>
+    <select class="inp" id="c-action" onchange="renderContacts()" style="width:112px"><option value="all">All actions</option><option value="review">Review button</option><option value="no-review">No review</option></select>
   </div>
   <div class="scroll"><table><thead><tr><th>Contact</th><th>Firm</th><th>Tier</th><th style="text-align:right">Unfiled</th><th style="text-align:right">10A</th><th>SWARMP</th><th>Tpl</th><th>Status</th><th>LinkedIn</th><th></th></tr></thead><tbody id="contacts-tbody"></tbody></table></div>
 </div>
@@ -1249,6 +1255,17 @@ function isPendingLinkedInRequest(c){
 function pendingLinkedInRequests(){
   return contacts.filter(isPendingLinkedInRequest);
 }
+function inRangeFilter(value,filter){
+  value=Number(value)||0;
+  if(filter==='all')return true;
+  if(filter==='0')return value===0;
+  if(filter.endsWith('+'))return value>=Number(filter.slice(0,-1));
+  if(filter.includes('-')){
+    const [lo,hi]=filter.split('-').map(Number);
+    return value>=lo&&value<=hi;
+  }
+  return true;
+}
 function lineDiff(o,r){
   const oL=(o||'').split('\n'),rL=(r||'').split('\n'),res=[];
   const mx=Math.max(oL.length,rL.length);
@@ -1307,23 +1324,60 @@ function updateGlobals(){
 function renderContacts(){
   updateGlobals();
   const s=(document.getElementById('c-search')?.value||'').toLowerCase();
+  const ff=(document.getElementById('c-firm')?.value||'').toLowerCase();
   const ft=document.getElementById('c-tier')?.value||'all';
+  const fu=document.getElementById('c-unfiled')?.value||'all';
+  const f10=document.getElementById('c-10a')?.value||'all';
+  const fsw=document.getElementById('c-swarmp')?.value||'all';
   const fp=document.getElementById('c-tpl')?.value||'all';
   const fs=document.getElementById('c-status')?.value||'all';
+  const fl=document.getElementById('c-linkedin')?.value||'all';
+  const fa=document.getElementById('c-action')?.value||'all';
   const filtered=contacts
     .filter(c=>ft==='all'||String(c.tier)===ft)
+    .filter(c=>inRangeFilter(c.totalUnfiled,fu))
+    .filter(c=>inRangeFilter(c.sub10A,f10))
+    .filter(c=>{
+      const sw=Number(c.wPriorSWARM)||0;
+      if(fsw==='all')return true;
+      if(fsw==='0')return sw===0;
+      if(fsw==='1-50')return sw>=1&&sw<=50;
+      if(fsw==='hot')return sw>50;
+      return true;
+    })
     .filter(c=>fp==='all'||c.templateUsed===fp)
     .filter(c=>{
       if(fs==='all')return true;
+      if(fs==='pending')return!c.emailSent&&!c.approved&&!isAddressNotFound(c);
+      if(fs==='approved')return c.approved&&!c.emailSent&&!isAddressNotFound(c);
       if(fs==='unsent')return!c.emailSent;
       if(fs==='sent')return c.emailSent;
       if(fs==='opened')return c.opened;
       if(fs==='replied')return c.replied;
+      if(fs==='bounced')return isAddressNotFound(c);
       if(fs==='empty')return!c.emailSent&&(!c.emailBody||!c.emailBody.trim()||!c.subjectLine||!c.subjectLine.trim());
       if(fs==='unknown')return hasUnknown(c.subjectLine)||hasUnknown(c.emailBody);
       return true;
     })
-    .filter(c=>!s||`${c.firstName} ${c.lastName} ${c.firmName}`.toLowerCase().includes(s))
+    .filter(c=>{
+      if(fl==='all')return true;
+      if(fl==='ready')return isPendingLinkedInRequest(c);
+      if(fl==='invite-sent')return c.linkedinOutreachStatus==='linkedin_invitation_sent'||c.linkedinOutreachStatus==='linkedin_connection';
+      if(fl==='invite-pending')return c.linkedinOutreachStatus==='linkedin_invitation_pending';
+      if(fl==='connected')return c.linkedinConnected||c.linkedinOutreachStatus==='linkedin_already_connected';
+      if(fl==='needs-retry')return !!c.linkedinOutreachStatus&&!isLinkedInInviteStatus(c.linkedinOutreachStatus);
+      if(fl==='missing')return!(c.linkedinUrl||'').trim();
+      return true;
+    })
+    .filter(c=>{
+      const hasReview=!c.emailSent;
+      if(fa==='all')return true;
+      if(fa==='review')return hasReview;
+      if(fa==='no-review')return!hasReview;
+      return true;
+    })
+    .filter(c=>!s||`${c.firstName} ${c.lastName} ${c.fullName||''} ${c.jobTitle||''} ${c.workEmail||''}`.toLowerCase().includes(s))
+    .filter(c=>!ff||`${c.firmName||''}`.toLowerCase().includes(ff))
     .sort((a,b)=>a.tier-b.tier||b.totalUnfiled-a.totalUnfiled);
   const tb=document.getElementById('contacts-tbody');if(!tb)return;
   if(!filtered.length){
