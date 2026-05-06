@@ -210,6 +210,13 @@ def _linkedin_connection_note(contact: dict) -> str:
     return note[:290]
 
 
+def _linkedin_note_for_send(note: str) -> str:
+    clean = (note or "").strip()
+    if not clean:
+        raise ValueError("LinkedIn connection requests require a non-empty note.")
+    return clean[:300].strip()
+
+
 def _queue_linkedin_after_initial_email(contact_id: str | int) -> dict | None:
     """
     Best-effort LinkedIn MCP enqueue after the first email send.
@@ -240,7 +247,7 @@ def _queue_linkedin_after_initial_email(contact_id: str | int) -> dict | None:
             sys.path.insert(0, agent_dir)
         from linkedin_mcp_client import LinkedInMCPClient  # type: ignore
 
-        message = _linkedin_connection_note(contact)
+        message = _linkedin_note_for_send(_linkedin_connection_note(contact))
         result = LinkedInMCPClient().queue_linkedin_outreach(contact, message)
         updated = {
             **contact,
@@ -999,7 +1006,7 @@ async def linkedin_connect(request: Request):
     if not contact.get("linkedinUrl"):
         raise HTTPException(status_code=400, detail="Add a LinkedIn URL before sending via LinkedIn MCP.")
 
-    message = (body.get("message") or "").strip() or _linkedin_connection_note(contact)
+    message = _linkedin_note_for_send((body.get("message") or "").strip() or _linkedin_connection_note(contact))
 
     try:
         import sys

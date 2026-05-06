@@ -72,6 +72,7 @@ class LinkedInMCPClient:
         Pushes a contact to the MCP server and, when a LinkedIn invite tool is
         exposed, asks the MCP server to send/queue the connection note.
         """
+        message = self._linkedin_invite_note(message)
         execute_tool = next((t for t in self._list_tools() if t.get("name") == "execute-request"), None)
         if execute_tool and self.api_base_url:
             return self._send_unipile_invite(contact, message, execute_tool["name"])
@@ -209,6 +210,13 @@ class LinkedInMCPClient:
 
     # ── Unipile execute-request fallback ─────────────────────────────────
 
+    @staticmethod
+    def _linkedin_invite_note(message: str) -> str:
+        note = (message or "").strip()
+        if not note:
+            raise LinkedInMCPError("LinkedIn connection requests require a non-empty note.")
+        return note[:300].strip()
+
     def _send_unipile_invite(self, contact: dict, message: str, tool_name: str) -> LinkedInMCPResult:
         if not self.api_base_url:
             raise LinkedInMCPError("LINKEDIN_MCP_API_BASE_URL is required for Unipile execute-request.")
@@ -241,7 +249,7 @@ class LinkedInMCPClient:
             body={
                 "account_id": account_id,
                 "provider_id": provider_id,
-                "message": message[:300],
+                "message": self._linkedin_invite_note(message),
             },
             tool_name=tool_name,
         )
