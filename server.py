@@ -182,6 +182,11 @@ def write_state(state: dict) -> None:
 
 def _find_contact_by_id(state: dict, contact_id: str | int) -> tuple[int, dict] | tuple[None, None]:
     needle = str(contact_id)
+    if "@" in needle:
+        email_needle = needle.lower()
+        for i, contact in enumerate(state.get("contacts", [])):
+            if (contact.get("workEmail") or "").lower() == email_needle:
+                return i, contact
     for i, contact in enumerate(state.get("contacts", [])):
         if str(contact.get("id")) == needle:
             return i, contact
@@ -264,7 +269,6 @@ def _queue_linkedin_after_initial_email(contact_id: str | int) -> dict | None:
 def _has_linkedin_invite_status(contact: dict) -> bool:
     return contact.get("linkedinOutreachStatus") in {
         "linkedin_invitation_sent",
-        "linkedin_invitation_pending",
         "linkedin_already_connected",
     }
 

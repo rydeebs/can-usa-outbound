@@ -1230,7 +1230,6 @@ function linkedinOutreachPatch(data){
 function isLinkedInInviteStatus(status){
   return [
     'linkedin_invitation_sent',
-    'linkedin_invitation_pending',
     'linkedin_already_connected'
   ].includes(status);
 }
@@ -1241,8 +1240,8 @@ function linkedInCell(c, pad='3px 9px'){
   return `<button class="btn" style="font-size:11px;padding:${pad};background:rgba(10,102,194,0.12);color:#5B9BD5;border-color:rgba(10,102,194,0.25)" data-email="${attrEsc(c.workEmail||'')}" onclick="promptLinkedIn(this.dataset.email)">Connect</button>`;
 }
 function linkedInStatusLabel(status){
-  if(status==='linkedin_invitation_sent'||status==='linkedin_connection')return 'Invite sent';
-  if(status==='linkedin_invitation_pending')return 'Invite pending';
+  if(status==='linkedin_invitation_sent')return 'Invite sent';
+  if(status==='linkedin_invitation_pending')return 'Needs retry';
   if(status==='linkedin_already_connected')return 'Connected';
   return 'Needs retry';
 }
@@ -1362,7 +1361,7 @@ function renderContacts(){
     .filter(c=>{
       if(fl==='all')return true;
       if(fl==='ready')return isPendingLinkedInRequest(c);
-      if(fl==='invite-sent')return c.linkedinOutreachStatus==='linkedin_invitation_sent'||c.linkedinOutreachStatus==='linkedin_connection';
+      if(fl==='invite-sent')return c.linkedinOutreachStatus==='linkedin_invitation_sent';
       if(fl==='invite-pending')return c.linkedinOutreachStatus==='linkedin_invitation_pending';
       if(fl==='connected')return c.linkedinConnected||c.linkedinOutreachStatus==='linkedin_already_connected';
       if(fl==='needs-retry')return !!c.linkedinOutreachStatus&&!isLinkedInInviteStatus(c.linkedinOutreachStatus);
@@ -1428,7 +1427,7 @@ async function sendPendingLinkedInRequests(){
       const r=await fetch('/api/linkedin/connect',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({contactId:c.id})
+        body:JSON.stringify({contactId:c.workEmail||c.id})
       });
       const data=await r.json().catch(()=>({}));
       if(!r.ok)throw new Error(data.detail||'LinkedIn MCP send failed');
@@ -3474,7 +3473,7 @@ async function sendLinkedInViaMcp(){
     const r=await fetch('/api/linkedin/connect',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({contactId:c.id})
+      body:JSON.stringify({contactId:c.workEmail||c.id})
     });
     const data=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(data.detail||'LinkedIn MCP send failed');

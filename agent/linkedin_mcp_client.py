@@ -253,7 +253,7 @@ class LinkedInMCPClient:
         if error_type == "errors/already_connected":
             return LinkedInMCPResult(True, "linkedin_already_connected", tool_name, invite)
         if error_type in ("errors/already_invited_recently", "errors/action_already_performed"):
-            return LinkedInMCPResult(True, "linkedin_invitation_pending", tool_name, invite)
+            return LinkedInMCPResult(True, "linkedin_invitation_sent", tool_name, invite)
 
         detail = invite_json.get("detail") or invite_json.get("title") or json.dumps(invite_json)[:300]
         raise LinkedInMCPError(f"Unipile invitation was not sent: {detail}")
@@ -283,24 +283,51 @@ class LinkedInMCPClient:
 
     @staticmethod
     def _extract_unipile_json(result: dict[str, Any]) -> dict[str, Any]:
+        def jsonish(value: Any) -> Any:
+            if not isinstance(value, str):
+                return value
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError:
+                return value
+
+        def is_api_payload(value: dict[str, Any]) -> bool:
+            return any(
+                key in value
+                for key in (
+                    "provider_id",
+                    "invitation_id",
+                    "object",
+                    "type",
+                    "title",
+                    "detail",
+                )
+            )
+
+        def walk(value: Any) -> dict[str, Any]:
+            value = jsonish(value)
+            if isinstance(value, dict):
+                for key in ("body", "text", "data", "result", "response", "content"):
+                    if key in value:
+                        found = walk(value[key])
+                        if found:
+                            return found
+                if is_api_payload(value):
+                    return value
+                for child in value.values():
+                    found = walk(child)
+                    if found:
+                        return found
+            elif isinstance(value, list):
+                for child in value:
+                    found = walk(child)
+                    if found:
+                        return found
+            return {}
+
         if not isinstance(result, dict):
             return {}
-        content = result.get("content")
-        if isinstance(content, list):
-            for item in content:
-                if isinstance(item, dict) and item.get("type") == "text":
-                    text = item.get("text", "")
-                    try:
-                        parsed = json.loads(text)
-                        if isinstance(parsed, dict):
-                            return parsed
-                    except json.JSONDecodeError:
-                        continue
-        for key in ("data", "result", "response"):
-            value = result.get(key)
-            if isinstance(value, dict):
-                return value
-        return result
+        return walk(result) or result
 
     # ── Tool/schema helpers ───────────────────────────────────────────────
 
