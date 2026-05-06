@@ -80,6 +80,17 @@ class SequenceEngine:
             step_to_send = contact.get("sequenceStep", 0)
             if step_to_send < 1 or step_to_send > 4:
                 continue  # All follow-ups sent
+            already_sent = self._store.get_seq_emails(contact["id"]).get(str(step_to_send), {})
+            if isinstance(already_sent, dict) and already_sent.get("sentAt"):
+                log.warning(
+                    "%s %s — step %s already has sentAt=%s; advancing pointer without resending",
+                    contact.get("firstName", ""),
+                    contact.get("lastName", ""),
+                    step_to_send,
+                    already_sent.get("sentAt"),
+                )
+                self._store.update(contact["id"], {"sequenceStep": step_to_send + 1})
+                continue
 
             # Find when the initial email was sent
             initial_sent_at = self._get_initial_send_date(contact["id"])
@@ -87,13 +98,15 @@ class SequenceEngine:
                 # No record — skip to avoid sending prematurely
                 continue
 
-            days_elapsed = (now - initial_sent_at).days
             days_required = DAYS_FROM_INITIAL.get(step_to_send, 99)
+            due_at = initial_sent_at + timedelta(days=days_required)
 
-            if days_elapsed >= days_required:
+            if now >= due_at:
+                days_elapsed = (now - initial_sent_at).days
                 log.info(
                     f"{contact['firstName']} {contact['lastName']} — "
-                    f"step {step_to_send} due ({days_elapsed}d elapsed, {days_required}d required)"
+                    f"step {step_to_send} due at {due_at.isoformat()} "
+                    f"({days_elapsed}d elapsed, {days_required}d required)"
                 )
                 due.append((contact, step_to_send))
 

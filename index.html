@@ -633,6 +633,8 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     <select class="inp" id="seq-f-tier" onchange="renderSeqStudio()" style="width:100px"><option value="all">All tiers</option><option value="1">Tier 1</option><option value="2">Tier 2</option><option value="3">Tier 3</option></select>
     <select class="inp" id="seq-f-tpl" onchange="renderSeqStudio()" style="width:118px"><option value="all">All templates</option><option value="A">Template A</option><option value="B">Template B</option><option value="C">Template C</option></select>
     <select class="inp" id="seq-f-status" onchange="renderSeqStudio()" style="width:118px"><option value="all">All statuses</option><option value="active">In sequence</option><option value="replied">Replied</option><option value="opened">Opened</option><option value="pending">Not sent</option></select>
+    <select class="inp" id="seq-f-stage" onchange="renderSeqStudio()" style="width:140px"><option value="all">All stages</option><option value="next-1">Next: Day 4</option><option value="next-2">Next: Day 8</option><option value="next-3">Next: Day 12</option><option value="next-4">Next: Day 21</option><option value="complete">Complete</option></select>
+    <select class="inp" id="seq-f-due" onchange="renderSeqStudio()" style="width:150px"><option value="all">All timing</option><option value="due">Due now</option><option value="overdue">Overdue</option><option value="today">Due today</option><option value="next-3">Next 3 days</option><option value="next-7">Next 7 days</option><option value="no-date">Missing send date</option><option value="paused">Paused</option></select>
     <span id="seq-filter-count" style="font-size:12px;color:var(--dim);margin-left:4px"></span>
   </div>
   <!-- Active sequences view -->
@@ -642,7 +644,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
   </div>
   <!-- All contacts view -->
   <div id="seq-contacts-view" class="scroll" style="display:none">
-    <table><thead><tr><th>Contact</th><th>Firm</th><th>Tier</th><th>Template</th><th style="text-align:right">Unfiled</th><th>SWARMP</th><th>Status</th><th>Step</th><th>LinkedIn</th><th>HTML design</th><th></th></tr></thead><tbody id="seq-contacts-tbody"></tbody></table>
+    <table><thead><tr><th>Contact</th><th>Firm</th><th>Tier</th><th>Template</th><th style="text-align:right">Unfiled</th><th>SWARMP</th><th>Status</th><th>Stage</th><th>Initial sent</th><th>Next send</th><th>Due in</th><th>LinkedIn</th><th>HTML design</th><th></th></tr></thead><tbody id="seq-contacts-tbody"></tbody></table>
   </div>
 </div>
 
@@ -999,13 +1001,13 @@ function saveSeqField(contactId,step,field,value){
   seqEmails[contactId][step][field]=value;save();
 }
 
-function markSeqEmailSent(contactId,step,subject,body){
+function markSeqEmailSent(contactId,step,subject,body,sentAt){
   if(!seqEmails[contactId])seqEmails[contactId]={};
   seqEmails[contactId][step]={
     ...(seqEmails[contactId][step]||{}),
     subject,
     body,
-    sentAt:new Date().toISOString()
+    sentAt:sentAt||new Date().toISOString()
   };
 }
 
@@ -1739,7 +1741,7 @@ async function doSend(){
         body:activeBody,
         html:htmlContent,
         htmlSignature:userSignature,
-        contactId:String(c.id),
+        contactId:c.workEmail||String(c.id),
         threadId:null,
       })
     });
@@ -1749,11 +1751,13 @@ async function doSend(){
       return;
     }
     const sendData=await r.json().catch(()=>({}));
-    markSeqEmailSent(c.id,0,subj,activeBody);
+    const sentAt=sendData.sentAt||new Date().toISOString();
+    markSeqEmailSent(c.id,0,subj,activeBody,sentAt);
     updateC(selectedQueueEmail,{
       emailSent:true,approved:true,emailBody:activeBody,
       subjectLine:subj,sequenceStep:1,
-      initialEmailSentAt:new Date().toISOString(),
+      initialEmailSentAt:sentAt,
+      emailSentAt:sentAt,
       gmailThreadId:sendData.threadId||null,
       gmailMessageId:sendData.messageId||null,
       ...linkedinOutreachPatch(sendData),
@@ -1783,7 +1787,7 @@ async function sendContactNow(c){
       body,
       html:htmlContent,
       htmlSignature:userSignature,
-      contactId:String(c.id),
+      contactId:c.workEmail||String(c.id),
       threadId:null,
     })
   });
@@ -1792,10 +1796,12 @@ async function sendContactNow(c){
     throw new Error(err.detail||'Send failed');
   }
   const sendData=await r.json().catch(()=>({}));
-  markSeqEmailSent(c.id,0,subj,body);
+  const sentAt=sendData.sentAt||new Date().toISOString();
+  markSeqEmailSent(c.id,0,subj,body,sentAt);
   updateC(c.workEmail,{
     emailSent:true,approved:true,emailBody:body,subjectLine:subj,sequenceStep:1,
-    initialEmailSentAt:new Date().toISOString(),
+    initialEmailSentAt:sentAt,
+    emailSentAt:sentAt,
     gmailThreadId:sendData.threadId||c.gmailThreadId||null,
     gmailMessageId:sendData.messageId||null,
     ...linkedinOutreachPatch(sendData),
@@ -2520,11 +2526,57 @@ function advanceQueue(){
 // ══════════════════════════════════════════════════════════════════
 // SEQUENCE STUDIO
 // ══════════════════════════════════════════════════════════════════
+function parseDateSafe(value){
+  if(!value)return null;
+  const d=new Date(value);
+  return Number.isNaN(d.getTime())?null:d;
+}
+function fmtDateTime(value){
+  const d=parseDateSafe(value);
+  return d?d.toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'—';
+}
+function addDays(date,days){
+  const d=new Date(date.getTime());
+  d.setDate(d.getDate()+days);
+  return d;
+}
+function seqInitialSentAt(c){
+  return seqEmails?.[c.id]?.[0]?.sentAt||c.initialEmailSentAt||c.emailSentAt||c.sentAt||null;
+}
+function seqTiming(c){
+  if(!c.emailSent)return{state:'not-sent',stage:'Not started',nextStep:0,lastStep:-1,initialAt:null,dueAt:null,daysUntil:null,label:'—'};
+  const step=Number(c.sequenceStep||1);
+  const lastStep=Math.max(0,Math.min(step-1,SEQ_META.length-1));
+  if(c.replied)return{state:'replied',stage:'Replied',nextStep:step,lastStep,initialAt:seqInitialSentAt(c),dueAt:null,daysUntil:null,label:'Stopped'};
+  if(c.paused)return{state:'paused',stage:'Paused',nextStep:step,lastStep,initialAt:seqInitialSentAt(c),dueAt:null,daysUntil:null,label:'Paused'};
+  if(step>=SEQ_META.length)return{state:'complete',stage:'Complete',nextStep:step,lastStep,initialAt:seqInitialSentAt(c),dueAt:null,daysUntil:null,label:'Complete'};
+  const initialAt=seqInitialSentAt(c);
+  const initialDate=parseDateSafe(initialAt);
+  if(!initialDate)return{state:'no-date',stage:`Next: ${SEQ_META[step].label}`,nextStep:step,lastStep,initialAt:null,dueAt:null,daysUntil:null,label:'Missing date'};
+  const dueAt=addDays(initialDate,SEQ_META[step].day);
+  const ms=dueAt.getTime()-Date.now();
+  const daysUntil=Math.ceil(ms/86400000);
+  const state=ms<=0?(dueAt.toDateString()===new Date().toDateString()?'due':'overdue'):'upcoming';
+  const label=ms<=0?(state==='overdue'?`${Math.abs(daysUntil)}d overdue`:'Due now'):`${daysUntil}d`;
+  return{state,stage:`Next: ${SEQ_META[step].label}`,nextStep:step,lastStep,initialAt,dueAt:dueAt.toISOString(),daysUntil,label};
+}
+function seqDueBadge(t){
+  if(t.state==='due')return badge('b-approved','Due now');
+  if(t.state==='overdue')return badge('b-swarmp',t.label);
+  if(t.state==='upcoming')return `<span style="font-size:12px;color:var(--muted)">${t.label}</span>`;
+  if(t.state==='no-date')return badge('b-approved','Missing date');
+  if(t.state==='paused')return badge('b-pending','Paused');
+  if(t.state==='complete')return badge('b-sent','Complete');
+  if(t.state==='replied')return badge('b-teal','Replied');
+  return '<span style="font-size:12px;color:var(--dim)">—</span>';
+}
 function getSeqFiltered(){
   const s=(document.getElementById('seq-search')?.value||'').toLowerCase();
   const ft=document.getElementById('seq-f-tier')?.value||'all';
   const fp=document.getElementById('seq-f-tpl')?.value||'all';
   const fs=document.getElementById('seq-f-status')?.value||'all';
+  const fst=document.getElementById('seq-f-stage')?.value||'all';
+  const fd=document.getElementById('seq-f-due')?.value||'all';
   return contacts
     .filter(c=>ft==='all'||String(c.tier)===ft)
     .filter(c=>fp==='all'||c.templateUsed===fp)
@@ -2534,6 +2586,25 @@ function getSeqFiltered(){
       if(fs==='replied')return c.replied;
       if(fs==='opened')return c.opened&&!c.replied;
       if(fs==='pending')return!c.emailSent;
+      return true;
+    })
+    .filter(c=>{
+      const t=seqTiming(c);
+      if(fst==='all')return true;
+      if(fst==='complete')return t.state==='complete';
+      if(fst.startsWith('next-'))return t.nextStep===Number(fst.split('-')[1])&&t.state!=='complete';
+      return true;
+    })
+    .filter(c=>{
+      const t=seqTiming(c);
+      if(fd==='all')return true;
+      if(fd==='due')return t.state==='due'||t.state==='overdue';
+      if(fd==='overdue')return t.state==='overdue';
+      if(fd==='today')return t.dueAt&&parseDateSafe(t.dueAt).toDateString()===new Date().toDateString();
+      if(fd==='next-3')return t.state==='upcoming'&&t.daysUntil<=3;
+      if(fd==='next-7')return t.state==='upcoming'&&t.daysUntil<=7;
+      if(fd==='no-date')return t.state==='no-date';
+      if(fd==='paused')return t.state==='paused';
       return true;
     })
     .filter(c=>!s||`${c.firstName} ${c.lastName} ${c.firmName}`.toLowerCase().includes(s))
@@ -2574,6 +2645,7 @@ function renderSeqLegend(){
 }
 
 function renderSeqCard(c){
+  const timing=seqTiming(c);
   const steps=SEQ_META.map((s,i)=>{
     const done=i<c.sequenceStep,curr=i===c.sequenceStep;
     const color=SEQ_STEP_COLORS[i];
@@ -2589,12 +2661,16 @@ function renderSeqCard(c){
   }).join('');
   const tplKey=`T${c.tier}-${c.templateUsed}`;
   const hasDesign=!!htmlTemplates[tplKey];
+  const dueLine=timing.dueAt
+    ?`Next send ${fmtDateTime(timing.dueAt)} · ${seqDueBadge(timing)}`
+    :`${timing.stage} · ${seqDueBadge(timing)}`;
   return`<div class="seq-card">
     <div class="seq-card-hdr">
       <div>
         <div class="seq-card-name">${c.firstName} ${c.lastName} ${c.wPriorSWARM>50?badge('b-swarmp','HOT'):''}</div>
         <div class="seq-card-sub">${c.firmName} &nbsp;·&nbsp; Step ${c.sequenceStep} of ${SEQ_META.length-1} &nbsp;·&nbsp; ${badge('b-t'+c.tier,'T'+c.tier)} ${badge(TPL[c.templateUsed]?.cls||'b-tplb',c.templateUsed)} ${statusBadge(c)} ${hasDesign?badge('b-teal','HTML design'):''}
         </div>
+        <div class="seq-card-sub">Initial sent ${fmtDateTime(timing.initialAt)} &nbsp;·&nbsp; ${dueLine}</div>
       </div>
       <div class="seq-card-actions">
         ${c.paused?'<span style="font-size:11px;color:var(--amber)">Paused</span>':''}
@@ -2610,10 +2686,11 @@ function renderSeqCard(c){
 function renderSeqContactsTable(filtered){
   const tb=document.getElementById('seq-contacts-tbody');if(!tb)return;
   if(!filtered.length){
-    tb.innerHTML='<tr><td colspan="11" style="text-align:center;padding:32px;color:var(--dim);font-size:13px">No contacts match filters.</td></tr>';
+    tb.innerHTML='<tr><td colspan="14" style="text-align:center;padding:32px;color:var(--dim);font-size:13px">No contacts match filters.</td></tr>';
     return;
   }
   tb.innerHTML=filtered.map(c=>{
+    const timing=seqTiming(c);
     const tplKey=`T${c.tier}-${c.templateUsed}`;
     const hasDes=!!htmlTemplates[tplKey];
     const desCel=hasDes
@@ -2634,7 +2711,10 @@ function renderSeqContactsTable(filtered){
       <td style="text-align:right;font-weight:600;color:${uf}">${c.totalUnfiled}</td>
       <td>${sw}</td>
       <td>${statusBadge(c)}</td>
-      <td style="font-size:12px;color:var(--muted)">${c.emailSent?`Step ${c.sequenceStep}/4`:'—'}</td>
+      <td style="font-size:12px;color:var(--muted)">${c.emailSent?`${timing.stage}<br/><span style="color:var(--dim)">Step ${c.sequenceStep}/4</span>`:'—'}</td>
+      <td style="font-size:12px;color:var(--muted);white-space:nowrap">${fmtDateTime(timing.initialAt)}</td>
+      <td style="font-size:12px;color:var(--muted);white-space:nowrap">${fmtDateTime(timing.dueAt)}</td>
+      <td>${seqDueBadge(timing)}</td>
       <td>${liCel}</td>
       <td>${desCel}</td>
       <td><button class="btn btn-violet" style="font-size:11px;padding:4px 9px" data-email="${c.workEmail||''}" onclick="openSeqEditorByEmail(this.dataset.email)">Sequence</button></td>
@@ -2809,7 +2889,7 @@ async function sendSeqStep(contactId,step){
         html:htmlContent,
         htmlSignature:userSignature,
         threadId:c.gmailThreadId||null,   // reply in original thread
-        contactId:String(c.id),
+        contactId:c.workEmail||String(c.id),
       })
     });
     if(!r.ok){
@@ -2818,13 +2898,19 @@ async function sendSeqStep(contactId,step){
       return;
     }
     const sendData=await r.json().catch(()=>({}));
-    markSeqEmailSent(contactId,step,subject,email.body);
-    updateC(contactId,{
+    const sentAt=sendData.sentAt||new Date().toISOString();
+    markSeqEmailSent(contactId,step,subject,email.body,sentAt);
+    const updates={
       emailSent:true,
       sequenceStep:step+1,
       gmailThreadId:sendData.threadId||c.gmailThreadId||null,
       gmailMessageId:sendData.messageId||null
-    });
+    };
+    if(step===0){
+      updates.initialEmailSentAt=sentAt;
+      updates.emailSentAt=sentAt;
+    }
+    updateC(c.workEmail||contactId,updates);
     toast('Sent via Gmail ✓','green');
   }catch(e){
     toast('Network error: '+e.message,'amber');

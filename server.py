@@ -94,6 +94,7 @@ def is_authenticated(request: Request) -> bool:
 DEFAULT_STATE: dict = {
     "contacts": [],
     "seqEmails": {},
+    "sentEmailLedger": {},
     "htmlTemplates": {},
     "customTemplates": [],
     "bounceStats": {},
@@ -278,6 +279,111 @@ def _has_linkedin_invite_status(contact: dict) -> bool:
         "linkedin_invitation_sent",
         "linkedin_already_connected",
     }
+
+
+def _normalize_for_duplicate_check(value: str) -> str:
+    return " ".join((value or "").strip().split()).lower()
+
+
+def _email_send_fingerprint(to: str, subject: str, body: str) -> str:
+    raw = json.dumps(
+        {
+            "to": _normalize_for_duplicate_check(to),
+            "subject": _normalize_for_duplicate_check(subject),
+            "body": _normalize_for_duplicate_check(body),
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _sent_email_record_from_state(
+    state: dict,
+    *,
+    fingerprint: str,
+    to: str,
+    subject: str,
+    body: str,
+    contact_id: str,
+) -> dict | None:
+    ledger = state.get("sentEmailLedger") or {}
+    if isinstance(ledger, dict) and ledger.get(fingerprint):
+        return ledger[fingerprint]
+
+    norm_to = _normalize_for_duplicate_check(to)
+    norm_subject = _normalize_for_duplicate_check(subject)
+    norm_body = _normalize_for_duplicate_check(body)
+    contacts = state.get("contacts", [])
+    seq_emails = state.get("seqEmails") or {}
+    for contact in contacts:
+        contact_matches = (
+            _normalize_for_duplicate_check(contact.get("workEmail", "")) == norm_to
+            or str(contact.get("id", "")) == str(contact_id)
+        )
+        if not contact_matches:
+            continue
+        sent_bodies = [
+            contact.get("emailBody", ""),
+            contact.get("refinedEmailBody", ""),
+        ]
+        if (
+            contact.get("emailSent")
+            and _normalize_for_duplicate_check(contact.get("subjectLine", "")) == norm_subject
+            and any(_normalize_for_duplicate_check(existing) == norm_body for existing in sent_bodies)
+        ):
+            return {
+                "to": to,
+                "subject": subject,
+                "contactId": str(contact.get("id", contact_id)),
+                "sentAt": (
+                    contact.get("initialEmailSentAt")
+                    or contact.get("emailSentAt")
+                    or contact.get("sentAt")
+                    or "previously"
+                ),
+            }
+        sequence = seq_emails.get(str(contact.get("id"))) if isinstance(seq_emails, dict) else None
+        if isinstance(sequence, dict):
+            for entry in sequence.values():
+                if not isinstance(entry, dict) or not entry.get("sentAt"):
+                    continue
+                if (
+                    _normalize_for_duplicate_check(entry.get("subject", "")) == norm_subject
+                    and _normalize_for_duplicate_check(entry.get("body", "")) == norm_body
+                ):
+                    return {
+                        "to": to,
+                        "subject": subject,
+                        "contactId": str(contact.get("id", contact_id)),
+                        "sentAt": entry.get("sentAt"),
+                    }
+    return None
+
+
+def _record_sent_email(
+    state: dict,
+    *,
+    fingerprint: str,
+    to: str,
+    subject: str,
+    contact_id: str,
+    thread_id: str | None,
+    message_id: str | None,
+    sent_at: str,
+) -> None:
+    ledger = state.get("sentEmailLedger")
+    if not isinstance(ledger, dict):
+        ledger = {}
+    ledger[fingerprint] = {
+        "to": to,
+        "subject": subject,
+        "contactId": contact_id,
+        "threadId": thread_id,
+        "messageId": message_id,
+        "sentAt": sent_at,
+    }
+    state["sentEmailLedger"] = dict(list(ledger.items())[-2000:])
 
 
 def _bounce_reason_text(contact: dict) -> str:
@@ -808,10 +914,10 @@ async def post_state(request: Request):
     try: body = await request.json()
     except Exception: raise HTTPException(status_code=400, detail="Invalid JSON")
     if not isinstance(body, dict): raise HTTPException(status_code=400)
-    if "bounceStats" not in body:
-        existing = read_state()
-        if existing.get("bounceStats"):
-            body["bounceStats"] = existing["bounceStats"]
+    existing = read_state()
+    for key in ("bounceStats", "sentEmailLedger", "processedInboundIds"):
+        if key not in body and existing.get(key):
+            body[key] = existing[key]
     write_state(body)
     return {"ok": True, "savedAt": body.get("savedAt")}
 
@@ -886,6 +992,8 @@ async def api_send(request: Request):
 
     if not to or not subject:
         raise HTTPException(status_code=400, detail="to and subject are required")
+    if not text:
+        raise HTTPException(status_code=400, detail="body is required")
 
     try:
         import sys
@@ -896,6 +1004,27 @@ async def api_send(request: Request):
         graph = GraphClient()
 
         contact_id = body.get("contactId", to)
+        contact_id_str = str(contact_id)
+        fingerprint = _email_send_fingerprint(to, subject, text)
+        state = read_state()
+        existing_send = _sent_email_record_from_state(
+            state,
+            fingerprint=fingerprint,
+            to=to,
+            subject=subject,
+            body=text,
+            contact_id=contact_id_str,
+        )
+        if existing_send and not body.get("allowDuplicate"):
+            sent_at = existing_send.get("sentAt", "recently")
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"This exact email was already sent to {to} at {sent_at}. "
+                    "Duplicate send blocked."
+                ),
+            )
+
         token      = _generate_token(to, str(contact_id))
         pixel_url  = f"https://{os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'can-usa-outbound-production.up.railway.app')}/track/open/{token}?e={to}&c={token}"
         pixel_tag  = f'<img src="{pixel_url}" width="1" height="1" alt="" style="display:none;border:0"/>' 
@@ -931,15 +1060,33 @@ async def api_send(request: Request):
                                 html=full_html, thread_id=thread_id)
 
         linkedin_outreach = None
-        contact_id_str = str(contact_id)
-        if not thread_id and contact_id_str and contact_id_str != to:
+        if not thread_id and contact_id_str:
             linkedin_outreach = _queue_linkedin_after_initial_email(contact_id_str)
+
+        sent_at = datetime.now(timezone.utc).isoformat()
+        result_thread_id = result.get("threadId") if result else None
+        result_message_id = result.get("id") if result else None
+        latest_state = read_state()
+        _record_sent_email(
+            latest_state,
+            fingerprint=fingerprint,
+            to=to,
+            subject=subject,
+            contact_id=contact_id_str,
+            thread_id=result_thread_id or thread_id,
+            message_id=result_message_id,
+            sent_at=sent_at,
+        )
+        write_state(latest_state)
 
         log.info(f"Sent via Gmail API: {to} — {subject!r}")
         return {"ok": True, "token": token,
-                "threadId": result.get("threadId") if result else None,
-                "messageId": result.get("id") if result else None,
+                "threadId": result_thread_id,
+                "messageId": result_message_id,
+                "sentAt": sent_at,
                 "linkedinOutreach": linkedin_outreach}
+    except HTTPException:
+        raise
     except FileNotFoundError:
         detail = (
             "Gmail not connected. Re-run agent/auth.py locally, update "

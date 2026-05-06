@@ -10,6 +10,7 @@ Falls back to local data/contacts.json if DATABASE_URL is not set
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -146,6 +147,51 @@ class ContactStore:
             and not c.get("paused")
             and 1 <= c.get("sequenceStep", 0) <= 4
         ]
+
+    @staticmethod
+    def email_fingerprint(to: str, subject: str, body: str) -> str:
+        raw = json.dumps(
+            {
+                "to": " ".join((to or "").strip().split()).lower(),
+                "subject": " ".join((subject or "").strip().split()).lower(),
+                "body": " ".join((body or "").strip().split()).lower(),
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    def get_sent_email_record(self, fingerprint: str) -> Optional[dict]:
+        state = _read_state()
+        ledger = state.get("sentEmailLedger") or {}
+        return ledger.get(fingerprint) if isinstance(ledger, dict) else None
+
+    def record_sent_email(
+        self,
+        *,
+        fingerprint: str,
+        to: str,
+        subject: str,
+        contact_id: int,
+        thread_id: Optional[str],
+        message_id: Optional[str],
+    ) -> str:
+        state = _read_state()
+        ledger = state.get("sentEmailLedger")
+        if not isinstance(ledger, dict):
+            ledger = {}
+        sent_at = datetime.now(timezone.utc).isoformat()
+        ledger[fingerprint] = {
+            "to": to,
+            "subject": subject,
+            "contactId": str(contact_id),
+            "threadId": thread_id,
+            "messageId": message_id,
+            "sentAt": sent_at,
+        }
+        state["sentEmailLedger"] = dict(list(ledger.items())[-2000:])
+        _write_state(state)
+        return sent_at
 
     def get_for_review(self) -> list[dict]:
         return [c for c in self.all() if c.get("pendingReview")]

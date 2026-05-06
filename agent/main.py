@@ -206,6 +206,16 @@ def _send_due_followups(
                     contact.get("workEmail", "?"),
                 )
                 continue
+            fingerprint = store.email_fingerprint(contact["workEmail"], subject, body_text)
+            existing_send = store.get_sent_email_record(fingerprint)
+            if existing_send:
+                log.warning(
+                    "Skipping duplicate follow-up step %s for %s: same email was already sent at %s",
+                    step,
+                    contact.get("workEmail", "?"),
+                    existing_send.get("sentAt", "unknown time"),
+                )
+                continue
 
             result = graph.send_email(
                 to=contact["workEmail"],
@@ -215,10 +225,20 @@ def _send_due_followups(
                 thread_id=thread_id,
             )
             thread_id_new = result.get("threadId") if result else thread_id
+            message_id = result.get("id") if result else None
+            store.record_sent_email(
+                fingerprint=fingerprint,
+                to=contact["workEmail"],
+                subject=subject,
+                contact_id=contact["id"],
+                thread_id=thread_id_new or thread_id,
+                message_id=message_id,
+            )
             engine.record_step_sent(contact["id"], step, subject, body_text)
             store.update(contact["id"], {
                 "sequenceStep": step + 1,
                 "gmailThreadId": thread_id_new or thread_id,
+                "gmailMessageId": message_id,
             })
             log.info(
                 f"Follow-up step {step} sent to "
